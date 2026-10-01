@@ -1,0 +1,5 @@
+.worktrees/
+/dist/
+/npm/dist/
+/tello
+/tello.exe
