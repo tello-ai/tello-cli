@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Two jobs so that "Re-run failed jobs" after an npm failure only re-runs the
+# npm job (publish-packages.mjs skips versions already on the registry);
+# re-running GoReleaser would fail on the existing GitHub release.
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: go test ./...
+      - run: node --test 'npm/**/*.test.mjs'
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The binaries and artifacts.json for the npm job, at the same dist/ paths.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/artifacts.json
+            dist/*/tello
+            dist/*/tello.exe
+          if-no-files-found: error
+
+  npm:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Build npm packages
+        run: node npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --dist dist --out npm/dist
+      # Trusted publishing (OIDC) with provenance; needs npm 11.5.1+, which Node 24 ships.
+      - name: Publish npm packages
+        run: node npm/scripts/publish-packages.mjs npm/dist
