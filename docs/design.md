@@ -226,6 +226,7 @@ SDK가 대화의 두뇌라서 답할 주체 없이 통화를 걸 수 없다(프�
 
 - `ci.yml`: gofmt, `go vet`, `go build`, `go test -race`, `node --test 'npm/**/*.test.mjs'`(Node 22+는 디렉터리 인자를 받지 않는다), shellcheck, `install.ps1` 파싱 검사, `goreleaser check`.
 - `release.yml`(태그 `v*`): job 두 개. `goreleaser`(테스트 → GoReleaser 릴리스 → 바이너리와 `artifacts.json`을 아티팩트로 업로드) → `npm`(플랫폼 패키지 생성 → npm 게시, OIDC trusted publishing, provenance). npm job만 다시 돌려도 안전하다.
+- 새 npm 패키지 부트스트랩: trusted publisher는 이미 있는 패키지에만 등록할 수 있다(`npm trust`). 처음 게시하는 패키지는 `NPM_TOKEN` 시크릿(스코프 `@tello-ai` 쓰기, 2FA 우회 granular 토큰)으로 게시하고, 게시 뒤 `npm trust github <패키지> --repo tello-ai/tello-cli --file release.yml --allow-publish`로 등록한 다음 시크릿과 토큰을 지운다. npm은 OIDC를 먼저 시도하므로 등록이 끝나면 토큰은 쓰이지 않는다.
 
 ## 13. 테스트
 
@@ -239,7 +240,7 @@ SDK가 대화의 두뇌라서 답할 주체 없이 통화를 걸 수 없다(프�
 | --- | --- | --- |
 | `accountId` 표시 | SDK가 `auth.ok`의 `accountId`를 노출하지 않음 | `tello-go`에 접근자 추가 후 `auth status`에 표시 |
 | 게이트웨이 식별 | CLI가 `sdk=go`로 기록됨 | `tello-go`에 식별자 지정 옵션 추가 여부 |
-| GitHub 저장소 | `tello-ai/tello-cli` 없음 | 생성, 릴리스 권한 |
+| GitHub 저장소 | `tello-ai/tello-cli` 생성(public) | — |
 | npm 게시 권한 | `@tello-ai` 스코프 보유 | 패키지 7개 trusted publisher 등록(첫 게시는 토큰 필요할 수 있음) |
 | 설치 스크립트 URL | GitHub raw | 자체 도메인(예: `telloai.io/install.sh`) 연결 |
 | 런처 부모 종료 | 런처가 SIGKILL 되면 Go 프로세스는 통화가 끝날 때까지 남는다 | 필요 시 부모 감시 추가 |

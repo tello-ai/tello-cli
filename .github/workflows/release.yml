@@ -61,5 +61,10 @@ jobs:
       - name: Build npm packages
         run: node npm/scripts/build-packages.mjs --version "${GITHUB_REF_NAME#v}" --dist dist --out npm/dist
       # Trusted publishing (OIDC) with provenance; needs npm 11.5.1+, which Node 24 ships.
+      # npm tries OIDC first. A package that does not exist yet has no trusted
+      # publisher, so its first publish falls back to the NPM_TOKEN secret;
+      # remove the secret once every package has a trusted publisher.
       - name: Publish npm packages
         run: node npm/scripts/publish-packages.mjs npm/dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
