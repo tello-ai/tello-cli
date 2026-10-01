@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-01)
 
 First release. Built on `github.com/tello-ai/tello-go` v0.2.4 (WS protocol `1.0`).
 
