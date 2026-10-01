@@ -241,6 +241,6 @@ SDK가 대화의 두뇌라서 답할 주체 없이 통화를 걸 수 없다(프�
 | `accountId` 표시 | SDK가 `auth.ok`의 `accountId`를 노출하지 않음 | `tello-go`에 접근자 추가 후 `auth status`에 표시 |
 | 게이트웨이 식별 | CLI가 `sdk=go`로 기록됨 | `tello-go`에 식별자 지정 옵션 추가 여부 |
 | GitHub 저장소 | `tello-ai/tello-cli` 생성(public) | — |
-| npm 게시 권한 | `@tello-ai` 스코프 보유 | 패키지 7개 trusted publisher 등록(첫 게시는 토큰 필요할 수 있음) |
+| npm 게시 권한 | 7개 패키지 모두 trusted publisher(`tello-ai/tello-cli`, `release.yml`) 등록, `NPM_TOKEN` 시크릿 삭제(v0.1.0) | 패키지를 새로 추가할 때만 §12.4 부트스트랩 |
 | 설치 스크립트 URL | GitHub raw | 자체 도메인(예: `telloai.io/install.sh`) 연결 |
 | 런처 부모 종료 | 런처가 SIGKILL 되면 Go 프로세스는 통화가 끝날 때까지 남는다 | 필요 시 부모 감시 추가 |
