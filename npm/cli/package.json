@@ -1,0 +1,32 @@
+{
+  "name": "@tello-ai/cli",
+  "version": "0.0.0",
+  "description": "Tello CLI: place phone calls and answer them live from a terminal or coding agent",
+  "keywords": [
+    "tello",
+    "cli",
+    "voice",
+    "phone",
+    "calls"
+  ],
+  "homepage": "https://github.com/tello-ai/tello-cli#readme",
+  "bugs": "https://github.com/tello-ai/tello-cli/issues",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tello-ai/tello-cli.git"
+  },
+  "bin": {
+    "tello": "bin/tello.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

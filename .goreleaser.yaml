@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: tello-cli
+
+builds:
+  - id: tello
+    main: ./cmd/tello
+    binary: tello
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/tello-ai/tello-cli/internal/version.Version={{ .Version }}
+      - -X github.com/tello-ai/tello-cli/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/tello-ai/tello-cli/internal/version.Date={{ .Date }}
+
+# The binary sits at the archive root; scripts/install.sh and install.ps1 rely
+# on these names and on checksums.txt.
+archives:
+  - id: tello
+    name_template: "tello_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: tello-ai
+    name: tello-cli
+  # vX.Y.Z-rc.N tags become GitHub pre-releases, which releases/latest skips.
+  prerelease: auto
