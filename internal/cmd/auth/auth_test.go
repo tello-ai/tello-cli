@@ -13,7 +13,7 @@ import (
 	"github.com/tello-ai/tello-cli/internal/app"
 	"github.com/tello-ai/tello-cli/internal/cmd/auth"
 	"github.com/tello-ai/tello-cli/internal/credentials"
-	"github.com/tello-ai/tello-cli/internal/fakegateway"
+	"github.com/tello-ai/tello-cli/internal/fakeapi"
 )
 
 // fakeKeychain is an in-memory app.SecretStore; err makes it unavailable,
@@ -87,7 +87,7 @@ func newEnv(t *testing.T, url string) *env {
 		APIKey:          credentials.New(getenv, configDir, e.keychain).Resolve,
 		StdinIsTerminal: func() bool { return false },
 		ReadSecret:      func(string) (string, error) { return "", errors.New("no terminal") },
-		URL:             url,
+		APIURL:          url,
 		JSON:            true,
 	}
 	return e
@@ -122,16 +122,10 @@ func (e *env) run(t *testing.T, args ...string) (result, int) {
 
 func (e *env) credentialsFile() string { return filepath.Join(e.configDir, "credentials.json") }
 
-func gateway(t *testing.T) *fakegateway.Server {
-	return fakegateway.New(t, func(c *fakegateway.Conn) {
-		if c.Authenticate("key-1") {
-			c.WaitClosed()
-		}
-	})
-}
+func api(t *testing.T) *fakeapi.Server { return fakeapi.New(t, "key-1") }
 
 func TestLoginRejectedKeyStoresNothing(t *testing.T) {
-	e := newEnv(t, gateway(t).URL)
+	e := newEnv(t, api(t).URL)
 	e.app.Stdin = strings.NewReader("bad-key\n")
 
 	r, exit := e.run(t, "login")
@@ -147,7 +141,7 @@ func TestLoginRejectedKeyStoresNothing(t *testing.T) {
 }
 
 func TestLoginFromStdinStoresVerifiedKeyInKeychain(t *testing.T) {
-	e := newEnv(t, gateway(t).URL)
+	e := newEnv(t, api(t).URL)
 	e.app.Stdin = strings.NewReader("key-1\nignored second line\n")
 
 	r, exit := e.run(t, "login")
@@ -166,7 +160,7 @@ func TestLoginFromStdinStoresVerifiedKeyInKeychain(t *testing.T) {
 }
 
 func TestLoginTTYPromptFallsBackToFileWithWarnings(t *testing.T) {
-	e := newEnv(t, "ws://127.0.0.1:1/sdk") // never dialed with --no-verify
+	e := newEnv(t, "http://127.0.0.1:1/v1") // never dialed with --no-verify
 	e.keychain.err = errors.New("keychain unavailable")
 	e.vars["TELLO_API_KEY"] = "env-key"
 	e.app.StdinIsTerminal = func() bool { return true }
@@ -197,7 +191,7 @@ func TestLoginWarnsOnlyWhenOldKeychainEntryMayShadowFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := newEnv(t, "ws://127.0.0.1:1/sdk")
+			e := newEnv(t, "http://127.0.0.1:1/v1")
 			tt.setup(e.keychain)
 			e.app.Stdin = strings.NewReader("key-1\n")
 
@@ -213,7 +207,7 @@ func TestLoginWarnsOnlyWhenOldKeychainEntryMayShadowFile(t *testing.T) {
 }
 
 func TestLoginAlreadyInterruptedDoesNotPrompt(t *testing.T) {
-	e := newEnv(t, "ws://127.0.0.1:1/sdk")
+	e := newEnv(t, "http://127.0.0.1:1/v1")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	e.ctx = ctx
@@ -231,7 +225,7 @@ func TestLoginAlreadyInterruptedDoesNotPrompt(t *testing.T) {
 }
 
 func TestLoginWithoutKeyIsUsageError(t *testing.T) {
-	e := newEnv(t, "ws://127.0.0.1:1/sdk")
+	e := newEnv(t, "http://127.0.0.1:1/v1")
 	e.app.Stdin = strings.NewReader("\n")
 
 	r, exit := e.run(t, "login")
@@ -241,12 +235,12 @@ func TestLoginWithoutKeyIsUsageError(t *testing.T) {
 }
 
 func TestStatus(t *testing.T) {
-	gw := gateway(t)
+	gw := api(t)
 	t.Run("offline", func(t *testing.T) {
 		e := newEnv(t, gw.URL)
 		e.keychain.secrets[credentials.Service+"/"+credentials.Account] = "key-1"
 		r, exit := e.run(t, "status", "--offline")
-		want := map[string]any{"source": "keyring", "url": gw.URL}
+		want := map[string]any{"source": "keyring", "apiUrl": gw.URL}
 		if exit != 0 || !mapsEqual(r.Data, want) {
 			t.Fatalf("exit = %d, data = %v, want %v", exit, r.Data, want)
 		}
@@ -260,7 +254,7 @@ func TestStatus(t *testing.T) {
 			t.Fatal(err)
 		}
 		r, exit := e.run(t, "status")
-		want := map[string]any{"source": "file", "path": e.credentialsFile(), "url": gw.URL, "authenticated": true}
+		want := map[string]any{"source": "file", "path": e.credentialsFile(), "apiUrl": gw.URL, "authenticated": true}
 		if exit != 0 || !mapsEqual(r.Data, want) {
 			t.Fatalf("exit = %d, data = %v, want %v", exit, r.Data, want)
 		}
@@ -269,7 +263,7 @@ func TestStatus(t *testing.T) {
 		e := newEnv(t, gw.URL)
 		e.vars["TELLO_API_KEY"] = "bad-key"
 		r, exit := e.run(t, "status")
-		want := map[string]any{"source": "env", "url": gw.URL, "authenticated": false}
+		want := map[string]any{"source": "env", "apiUrl": gw.URL, "authenticated": false}
 		if exit != 3 || r.Error["code"] != "unauthenticated" || !mapsEqual(r.Data, want) {
 			t.Fatalf("exit = %d, result = %+v", exit, r)
 		}
@@ -284,7 +278,7 @@ func TestStatus(t *testing.T) {
 }
 
 func TestLogoutRemovesStoredKeys(t *testing.T) {
-	e := newEnv(t, "ws://127.0.0.1:1/sdk")
+	e := newEnv(t, "http://127.0.0.1:1/v1")
 	e.keychain.secrets[credentials.Service+"/"+credentials.Account] = "key-1"
 	e.vars["TELLO_API_KEY"] = "env-key"
 
@@ -302,7 +296,7 @@ func TestLogoutRemovesStoredKeys(t *testing.T) {
 }
 
 func TestUnknownSubcommandIsUsageError(t *testing.T) {
-	e := newEnv(t, "ws://127.0.0.1:1/sdk")
+	e := newEnv(t, "http://127.0.0.1:1/v1")
 	r, exit := e.run(t, "signup")
 	if exit != 2 || r.Error["kind"] != "usage" {
 		t.Fatalf("exit = %d, result = %+v", exit, r)

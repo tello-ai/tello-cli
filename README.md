@@ -3,15 +3,15 @@
 # tello-cli
 
 `tello` places Tello phone calls from a terminal or a coding agent (Claude Code,
-Codex), answers each turn of the call in real time, and fetches call summaries.
-It wraps the [Tello Go SDK](https://github.com/tello-ai/tello-go) (WebSocket
-protocol `1.0`) in a single binary.
+Codex), follows them, and reads their results. A call is answered either by an
+agent or crew configured in the Tello portal (REST API), or turn by turn by you
+or a program (WebSocket gateway, via the [Tello Go SDK](https://github.com/tello-ai/tello-go),
+protocol `1.0`). One binary does both.
 
 > Repository: `tello-cli` · npm: `@tello-ai/cli` · binary: `tello`
 >
-> The CLI covers what the `/sdk` protocol offers: placing a call, answering
-> turns, DTMF, cancelling, and the summary of a finished call. Agent
-> configuration lives in the Tello portal.
+> Agent configuration lives in the Tello portal; the CLI picks an agent or
+> crew by id and places, follows, lists and ends calls.
 
 ## 1. Install
 
@@ -41,22 +41,56 @@ variables: `TELLO_VERSION` (default: latest), `TELLO_INSTALL_DIR`,
 ## 2. API key
 
 ```sh
-tello auth login     # prompts for the key, checks it against the gateway, stores it
-tello auth status    # where the key comes from, and whether the gateway accepts it
+tello auth login     # prompts for the key, checks it against the API, stores it
+tello auth status    # where the key comes from, and whether the API accepts it
 tello auth logout
 ```
 
 The key is looked up in this order: `TELLO_API_KEY`, the OS keychain, then
 `<user config dir>/tello/credentials.json` (mode 0600, used when no keychain is
 available, e.g. headless Linux or WSL). The key is never accepted as a flag and
-never printed. In CI, set `TELLO_API_KEY`.
+never printed. In CI, set `TELLO_API_KEY`. The same server key works for the
+REST API, the WebSocket gateway, MCP and A2A.
 
-The gateway is `wss://api.telloai.io/sdk` unless `--url` or `TELLO_URL` says
-otherwise.
+Endpoints: the REST API is `https://api.telloai.io/v1` unless `--api-url` or
+`TELLO_API_URL` says otherwise. Remote REST endpoints require HTTPS; HTTP is
+allowed only for loopback development servers. The WebSocket gateway for `-i`
+and handler calls is `wss://api.telloai.io/sdk` unless `--url` or `TELLO_URL`
+says otherwise.
 
-## 3. Place a call
+## 3. Place a call with a portal agent
 
-The CLI is the brain of the call: somebody has to answer each turn of the
+```sh
+tello agent list                    # deployed agents (tello crew list for crews)
+tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
+```
+
+Without `--wait` the command returns as soon as the call is accepted and
+prints its id; follow it with `tello call get <id>`. With `--wait` it prints
+each status change and the final call (summary, transcript, credit). Ctrl-C
+or `--timeout 10m` requests that the call end; if creation or termination
+cannot be confirmed, the call may still be active. Check the call list or
+call status before retrying. `--var name=value` fills the agent's start
+variables; a crew that needs more fails with `missingVariables` and the names.
+
+Every create carries an idempotency key (random unless `--idempotency-key`
+is given). A failed create reports it in `data.idempotencyKey`. Reuse that key
+for the same request, but check the call list when the outcome is unknown:
+responses are retained for 24 hours and a response-storage failure can allow
+the same key to place another call after five minutes.
+
+```sh
+tello call get c_12345              # status, timing, summary, transcript, credit
+tello call list --status completed --agent 12 --created-after 2026-10-20
+tello call end c_12345              # ask the service to end a live call
+```
+
+Calls are real and billed. The callee must be a verified number of your
+account (`calleeNotVerified` otherwise).
+
+## 4. Answer a call yourself
+
+Instead of a portal agent, you or a program can answer each turn of the
 callee. Pick exactly one answer source.
 
 ```sh
@@ -67,12 +101,10 @@ tello call create --to +821012345678 --prompt "Booking check" -i
 tello call create --to +821012345678 --metadata @booking.json -- python3 bot.py
 ```
 
-`call create` blocks until the call ends. Ctrl-C cancels the call and waits up
-to 10 s for the gateway to confirm; a second Ctrl-C exits immediately.
-`--timeout 10m` cancels a call that runs too long.
-
-Calls are real and billed. The callee must be a verified number of your
-account (`callerNotVerified` otherwise).
+These calls block until they end. Ctrl-C cancels the call and waits up to
+10 s for the gateway to confirm; a second Ctrl-C exits immediately.
+`--timeout 10m` cancels a call that runs too long. Unverified callees fail
+with `callerNotVerified`.
 
 ### Handler protocol
 
@@ -106,54 +138,58 @@ for line in sys.stdin:
         print(json.dumps(reply, ensure_ascii=False), flush=True)
 ```
 
-### More calls
+## 5. Several calls
 
 ```sh
-tello call summary <callId>                         # finished calls only
+tello call batch --tasks tasks.json --agent 12
 tello call batch --tasks tasks.json -- python3 bot.py
 ```
 
-`tasks.json` is `[{"to":"+8210…","prompt":"…","metadata":{…}}]` (`-` reads
-stdin). Calls run one after another with a fresh handler each; refusals that
-can succeed later are retried (`--max-retries 3`, `--retry-delay 5s`, doubling).
-Account-wide refusals such as `insufficientCredit` stop the batch.
+With `--agent`/`--crew`, `tasks.json` is `[{"to":"+8210…","variables":{…}}]`;
+with `-i` or a handler it is `[{"to":"+8210…","prompt":"…","metadata":{…}}]`
+(`-` reads stdin). Each call ends before the next starts. Refusals that can
+succeed later are retried (`--max-retries 3`, `--retry-delay 5s`, doubling;
+the same idempotency key per task). Account-wide refusals such as
+`insufficientCredit`, and a target that cannot be called, stop the batch.
 
-## 4. JSON output and exit codes
+## 6. JSON output and exit codes
 
-With `--json`, stdout carries one JSON object per line. `call create` and
-`call batch` first stream the gateway frames verbatim (plus `cli.task` and
-`cli.retry` for batch). **Every command ends with exactly one `cli.result`
-line:**
+With `--json`, stdout carries one JSON object per line. `call create --wait`
+streams `cli.status` lines; handler and `-i` calls stream the gateway frames
+verbatim; `call batch` adds `cli.task` and `cli.retry`. **Every command ends
+with exactly one `cli.result` line:**
 
 ```json
-{"type":"cli.result","ok":true,"data":{"callId":"…","status":"completed"}}
-{"type":"cli.result","ok":false,"error":{"kind":"refused","code":"insufficientCredit","message":"…","retryable":false,"exitCode":4}}
+{"type":"cli.result","ok":true,"data":{"id":"c_12345","status":"completed","summary":"…"}}
+{"type":"cli.result","ok":false,"error":{"kind":"refused","code":"insufficientCredit","message":"…","retryable":false,"exitCode":4},"data":{"idempotencyKey":"…"}}
 ```
 
-Branch on `error.code`, not on `message`. Only `--help`, `--version`, a second
-Ctrl-C and a Ctrl-C at the `auth login` prompt end without a `cli.result` line.
+Branch on `error.code`, not on `message`. REST error codes are camelCased
+(`insufficient_credit` → `insufficientCredit`). Only `--help`, `--version`, a
+second Ctrl-C and a Ctrl-C at the `auth login` prompt end without a
+`cli.result` line.
 
 | Exit | Kind | Meaning |
 | --- | --- | --- |
 | 0 | — | Success |
 | 1 | `internal` | Unexpected error |
-| 2 | `usage` | Bad flags or arguments, or a gateway URL that is not `ws://`/`wss://` (`invalidUrl`) |
+| 2 | `usage` | Bad flags or arguments, or a URL with the wrong scheme (`invalidUrl`) |
 | 3 | `auth` | Missing or rejected API key |
-| 4 | `refused` | Account policy refusal: `insufficientCredit`, `callerNotVerified`, `noRepresentativeNumber` |
-| 5 | `invalid` | Rejected by the gateway: `toRequired`, `callNotFound`, `callNotCompleted`, `callRejected`, … |
+| 4 | `refused` | Account policy refusal: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `callerNumberUnavailable`, … |
+| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `callRejected`, … |
 | 6 | `callEnded` | The call did not complete: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
-| 7 | `connection` | Could not connect, the connection dropped (also during authentication), or `summaryTimeout` |
-| 8 | `server` | Service-side error: `internalError`, `callProviderUnauthorized`, `callSetupFailed` |
+| 7 | `connection` | Could not connect, or the connection dropped (also during authentication) |
+| 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `internalError`, `callSetupFailed`, … |
 | 9 | `handler` | The handler failed to start or exited mid-call |
-| 75 | `temporary` | Retry later: `concurrentLimitExceeded`, `callProviderDraining`, `callProviderUnavailable`, `callAlreadyActive` |
+| 75 | `temporary` | Retry later: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `callProviderUnavailable`, … |
 | 130 | `interrupted` | Ctrl-C or SIGTERM |
 
-## 5. Coding agents
+## 7. Coding agents
 
 ```sh
 tello init                          # writes .claude/skills/tello/SKILL.md and .codex/skills/tello/SKILL.md
 tello guide coding-agent --brief    # the operating contract for agents
-tello doctor                        # version, key, URL, authentication, skill files
+tello doctor                        # version, key, API and gateway URLs, authentication, skill files
 ```
 
 Claude Code and Codex read the skill files automatically. They are managed by
@@ -161,7 +197,7 @@ the CLI: `tello init` rewrites them when they differ from the current template,
 and `tello doctor` reports stale ones. Agents without skill support can put
 `tello guide coding-agent --brief` in their instructions.
 
-## 6. Development
+## 8. Development
 
 ```sh
 go test -race ./...

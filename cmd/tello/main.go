@@ -18,6 +18,7 @@ import (
 )
 
 func main() {
+	ignoreBrokenPipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go handleSignals(cancel)

@@ -12,6 +12,7 @@ import (
 	"github.com/tello-ai/tello-cli/internal/cmd/doctor"
 	guidecmd "github.com/tello-ai/tello-cli/internal/cmd/guide"
 	"github.com/tello-ai/tello-cli/internal/cmd/initcmd"
+	"github.com/tello-ai/tello-cli/internal/cmd/target"
 	versioncmd "github.com/tello-ai/tello-cli/internal/cmd/version"
 	"github.com/tello-ai/tello-cli/internal/version"
 )
@@ -20,9 +21,10 @@ import (
 func NewRootCmd(a *app.App) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "tello",
-		Short: "Place and answer Tello phone calls from the terminal",
-		Long: `tello places phone calls through the Tello gateway and lets you, a program,
-or a coding agent answer each turn in real time.
+		Short: "Place and follow Tello phone calls from the terminal",
+		Long: `tello places phone calls through Tello. A portal agent or crew can answer
+them (--agent / --crew, REST API), or you, a program or a coding agent can
+answer each turn in real time (-i / a handler, WebSocket gateway).
 
 Every command supports --json: stdout becomes one JSON object per line and the
 last line is always {"type":"cli.result",...}. Exit codes are listed by
@@ -43,11 +45,14 @@ last line is always {"type":"cli.result",...}. Exit codes are listed by
 	})
 	flags := root.PersistentFlags()
 	flags.BoolVar(&a.JSON, "json", false, `write NDJSON to stdout; the last line is {"type":"cli.result",...}`)
-	flags.StringVar(&a.URL, "url", "", "gateway URL (default $TELLO_URL, then wss://api.telloai.io/sdk)")
+	flags.StringVar(&a.URL, "url", "", "WebSocket gateway for -i/handler calls (default $TELLO_URL, then wss://api.telloai.io/sdk)")
+	flags.StringVar(&a.APIURL, "api-url", "", "REST API base (default $"+app.EnvAPIURL+", then "+app.DefaultAPIURL+")")
 
 	root.AddCommand(
+		target.NewAgent(a),
 		auth.New(a),
 		call.New(a),
+		target.NewCrew(a),
 		doctor.New(a),
 		guidecmd.New(a),
 		initcmd.New(a),

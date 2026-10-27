@@ -20,6 +20,9 @@ func (a *App) WriteLine(v any) error {
 	a.outMu.Lock()
 	defer a.outMu.Unlock()
 	_, err := a.Stdout.Write(buf.Bytes())
+	if err != nil && a.outErr == nil {
+		a.outErr = err
+	}
 	return err
 }
 
@@ -31,6 +34,9 @@ func (a *App) WriteEvent(event tello.Event) error {
 // WriteResult writes the success cli.result line in JSON mode. In human
 // mode it writes nothing; commands print their own human output.
 func (a *App) WriteResult(data any) error {
+	if err := a.OutputError(); err != nil {
+		return err
+	}
 	if !a.JSON {
 		return nil
 	}
@@ -44,7 +50,16 @@ func (a *App) WriteResult(data any) error {
 func (a *App) Printf(format string, args ...any) {
 	a.outMu.Lock()
 	defer a.outMu.Unlock()
-	fmt.Fprintf(a.Stdout, format, args...)
+	if _, err := fmt.Fprintf(a.Stdout, format, args...); err != nil && a.outErr == nil {
+		a.outErr = err
+	}
+}
+
+// OutputError returns the first stdout write failure.
+func (a *App) OutputError() error {
+	a.outMu.Lock()
+	defer a.outMu.Unlock()
+	return a.outErr
 }
 
 // Warnf writes a warning to Stderr in both modes.
@@ -80,18 +95,40 @@ func (a *App) ReportError(err error) int {
 			line["data"] = e.Data
 		}
 		if werr := a.WriteLine(line); werr != nil {
-			fmt.Fprintf(a.Stderr, "tello: %s\n", e.Message)
+			a.printError(e)
 		}
 		return e.ExitCode()
 	}
 	a.outMu.Lock()
 	defer a.outMu.Unlock()
+	a.printError(e)
+	return e.ExitCode()
+}
+
+// printError preserves actionable failure details when JSON output is
+// unavailable as well as in human mode.
+func (a *App) printError(e *Error) {
 	fmt.Fprintf(a.Stderr, "tello: %s [%s]\n", e.Message, e.Code)
 	if e.Question != "" {
 		fmt.Fprintf(a.Stderr, "  question: %s\n", e.Question)
 	}
+	if data, ok := e.Data.(map[string]any); ok {
+		if key, ok := data["idempotencyKey"].(string); ok && key != "" {
+			fmt.Fprintf(a.Stderr, "  idempotency key: %s\n", key)
+		}
+		if id, ok := data["id"].(string); ok && id != "" {
+			fmt.Fprintf(a.Stderr, "  call ID: %s\n", id)
+		}
+		if call, ok := data["call"].(map[string]any); ok {
+			if id, ok := call["id"].(string); ok && id != "" {
+				fmt.Fprintf(a.Stderr, "  call ID: %s\n", id)
+			}
+		}
+		if names, ok := data["missingVariables"]; ok {
+			fmt.Fprintf(a.Stderr, "  missing variables: %v\n", names)
+		}
+	}
 	if hint, ok := hints[e.Code]; ok {
 		fmt.Fprintf(a.Stderr, "  hint: %s\n", hint)
 	}
-	return e.ExitCode()
 }

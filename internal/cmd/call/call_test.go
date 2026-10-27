@@ -26,8 +26,20 @@ type result struct {
 	lines  []map[string]any
 }
 
-// run executes `call <args>` like the root command does.
+// run executes `call <args>` like the root command does, against the
+// WebSocket gateway at url.
 func run(t *testing.T, url, stdin string, jsonMode bool, args ...string) result {
+	t.Helper()
+	return runCtx(t, context.Background(), func(a *app.App) { a.URL = url }, stdin, jsonMode, args...)
+}
+
+// runAPI executes `call <args>` against the REST API at apiURL.
+func runAPI(t *testing.T, apiURL, stdin string, jsonMode bool, args ...string) result {
+	t.Helper()
+	return runCtx(t, context.Background(), func(a *app.App) { a.APIURL = apiURL }, stdin, jsonMode, args...)
+}
+
+func runCtx(t *testing.T, ctx context.Context, setup func(*app.App), stdin string, jsonMode bool, args ...string) result {
 	t.Helper()
 	var stdout bytes.Buffer
 	stderr := &handlertest.SyncBuffer{}
@@ -37,12 +49,12 @@ func run(t *testing.T, url, stdin string, jsonMode bool, args ...string) result 
 		Stderr: stderr,
 		Getenv: func(string) string { return "" },
 		APIKey: func() (app.Credential, error) { return app.Credential{Key: "key-1", Source: "env"}, nil },
-		URL:    url,
 		JSON:   jsonMode,
 	}
+	setup(a)
 	cmd := call.New(a)
 	cmd.SetArgs(args)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(ctx)
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
@@ -232,88 +244,6 @@ func TestCreateUsageErrors(t *testing.T) {
 			r.failed(t, 2, "usage")
 		})
 	}
-}
-
-func TestSummaryKeepsGatewayNulls(t *testing.T) {
-	t.Parallel()
-	gw := fakegateway.New(t, func(c *fakegateway.Conn) {
-		if !c.Authenticate("key-1") {
-			return
-		}
-		data := c.ReadEvent("getSummary")
-		if data["callId"] != "call-9" {
-			t.Errorf("getSummary callId = %v", data["callId"])
-		}
-		c.Send(map[string]any{
-			"type": "call.summary", "version": "1.0", "requestId": data["requestId"],
-			"callId": "call-9", "status": "completed", "durationSeconds": 42,
-			"transcript": "user: hi", "summary": nil, "creditCharged": nil,
-		})
-		c.WaitClosed()
-	})
-	r := run(t, gw.URL, "", true, "summary", "call-9")
-	if r.exit != 0 {
-		t.Fatalf("exit %d stderr:\n%s", r.exit, r.stderr)
-	}
-	if len(r.lines) != 1 {
-		t.Fatalf("summary writes only the result line, got %v", r.lines)
-	}
-	want := `{"callId":"call-9","creditCharged":null,"durationSeconds":42,"status":"completed","summary":null,"transcript":"user: hi"}`
-	if got := jsonOf(r.last(t)["data"]); got != want {
-		t.Fatalf("data = %s, want %s", got, want)
-	}
-}
-
-func TestSummaryHumanOutput(t *testing.T) {
-	t.Parallel()
-	gw := fakegateway.New(t, func(c *fakegateway.Conn) {
-		if !c.Authenticate("key-1") {
-			return
-		}
-		data := c.ReadEvent("getSummary")
-		c.Send(map[string]any{
-			"type": "call.summary", "version": "1.0", "requestId": data["requestId"],
-			"callId": "call-9", "status": "completed", "durationSeconds": 42,
-			"transcript": "user: hi", "summary": "Booked.", "creditCharged": nil,
-		})
-		c.WaitClosed()
-	})
-	r := run(t, gw.URL, "", false, "summary", "call-9")
-	if r.exit != 0 {
-		t.Fatalf("exit %d stderr:\n%s", r.exit, r.stderr)
-	}
-	for _, want := range []string{"call-9", "completed", "42", "Booked.", "user: hi"} {
-		if !strings.Contains(r.stdout, want) {
-			t.Fatalf("human summary missing %q:\n%s", want, r.stdout)
-		}
-	}
-}
-
-func TestSummaryErrorsAndTimeout(t *testing.T) {
-	t.Parallel()
-	gw := fakegateway.New(t, func(c *fakegateway.Conn) {
-		if !c.Authenticate("key-1") {
-			return
-		}
-		data := c.ReadEvent("getSummary")
-		switch data["callId"] {
-		case "call-live":
-			c.Error("noActiveCall", "unrelated", "other-request") // must be ignored
-			c.Error("callNotCompleted", "Call is not completed", data["requestId"].(string))
-		case "call-slow":
-			// never answers
-		}
-		c.WaitClosed()
-	})
-	r := run(t, gw.URL, "", true, "summary", "call-live")
-	r.failed(t, 5, "callNotCompleted")
-
-	r = run(t, gw.URL, "", true, "summary", "call-slow", "--timeout", "100ms")
-	// Not `timeout`: that code means a call cancelled by --timeout (exit 6).
-	r.failed(t, 7, "summaryTimeout")
-
-	r = run(t, gw.URL, "", true, "summary")
-	r.failed(t, 2, "usage")
 }
 
 func writeTasks(t *testing.T, content string) string {

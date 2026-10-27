@@ -1,4 +1,4 @@
-// Package call implements `tello call create | summary | batch`
+// Package call implements `tello call create | get | list | end | batch`
 // (docs/design.md sections 8 to 10).
 package call
 
@@ -19,11 +19,11 @@ import (
 func New(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "call",
-		Short: "Place calls and read their results",
+		Short: "Place calls, follow them and read their results",
 		Args:  cobra.ArbitraryArgs,
 		RunE:  a.GroupRunE,
 	}
-	cmd.AddCommand(newCreate(a), newSummary(a), newBatch(a))
+	cmd.AddCommand(newCreate(a), newGet(a), newList(a), newEnd(a), newBatch(a))
 	return cmd
 }
 
@@ -48,7 +48,7 @@ func handlerArgv(cmd *cobra.Command, args []string, interactive bool) ([]string,
 		return nil, app.Usagef("use either --interactive or a handler command after --, not both")
 	}
 	if !interactive && argv == nil {
-		return nil, app.Usagef("an answer source is required: --interactive, or a handler command after --")
+		return nil, app.Usagef("an answer source is required: --agent or --crew, --interactive, or a handler command after --")
 	}
 	return argv, nil
 }

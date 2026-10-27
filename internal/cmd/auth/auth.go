@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tello-ai/tello-cli/internal/app"
 	"github.com/tello-ai/tello-cli/internal/credentials"
+	"github.com/tello-ai/tello-cli/internal/rest"
 	"github.com/tello-ai/tello-go/tello"
 )
 
@@ -50,13 +51,7 @@ func newLogin(a *app.App) *cobra.Command {
 			}
 			if !noVerify {
 				// Verify before saving so a rejected key never replaces a good one.
-				client, err := tello.NewClient(key, tello.WithURL(a.EffectiveURL()))
-				if err != nil {
-					return app.NewError(app.KindAuth, "apiKeyMissing", "no API key given")
-				}
-				err = a.Connect(cmd.Context(), client)
-				_ = client.Close()
-				if err != nil {
+				if err := verify(cmd.Context(), a, key); err != nil {
 					return err
 				}
 			}
@@ -88,7 +83,7 @@ func newLogin(a *app.App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&noVerify, "no-verify", false, "save without checking the key against the gateway")
+	cmd.Flags().BoolVar(&noVerify, "no-verify", false, "save without checking the key against the API")
 	return cmd
 }
 
@@ -126,10 +121,21 @@ func readKey(ctx context.Context, a *app.App) (string, error) {
 	return key, nil
 }
 
+// verify checks key against the REST API with the cheapest authenticated
+// request.
+func verify(ctx context.Context, a *app.App, key string) error {
+	c, err := rest.NewWithKey(a, key)
+	if err != nil {
+		return err
+	}
+	_, err = c.ListAgents(ctx)
+	return err
+}
+
 type statusData struct {
 	Source string `json:"source"`
 	Path   string `json:"path,omitempty"`
-	URL    string `json:"url"`
+	APIURL string `json:"apiUrl"`
 	// Authenticated is omitted with --offline.
 	Authenticated *bool `json:"authenticated,omitempty"`
 }
@@ -138,23 +144,25 @@ func newStatus(a *app.App) *cobra.Command {
 	var offline bool
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show where the API key comes from and check it against the gateway",
+		Short: "Show where the API key comes from and check it against the API",
 		Args:  app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, cred, err := a.NewClient()
+			cred, err := a.Credential()
 			if err != nil {
 				return err
 			}
-			data := statusData{Source: cred.Source, Path: cred.Path, URL: a.EffectiveURL()}
+			data := statusData{Source: cred.Source, Path: cred.Path, APIURL: a.EffectiveAPIURL()}
+			if err := app.ValidateAPIURL(data.APIURL); err != nil {
+				return err
+			}
 			if !a.JSON {
 				a.Printf("API key: %s\n", describeSource(cred))
-				a.Printf("Gateway: %s\n", data.URL)
+				a.Printf("API:     %s\n", data.APIURL)
 			}
 			if offline {
 				return a.WriteResult(data)
 			}
-			err = a.Connect(cmd.Context(), client)
-			_ = client.Close()
+			err = verify(cmd.Context(), a, cred.Key)
 			authenticated := err == nil
 			data.Authenticated = &authenticated
 			if err != nil {
@@ -168,7 +176,7 @@ func newStatus(a *app.App) *cobra.Command {
 			return a.WriteResult(data)
 		},
 	}
-	cmd.Flags().BoolVar(&offline, "offline", false, "only resolve the key; do not contact the gateway")
+	cmd.Flags().BoolVar(&offline, "offline", false, "only resolve the key; do not contact the API")
 	return cmd
 }
 

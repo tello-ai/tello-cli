@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/tello-ai/tello-go/tello"
@@ -57,9 +59,14 @@ type App struct {
 
 	// Global flags, bound by the root command.
 	JSON bool
-	URL  string
+	// URL is the WebSocket gateway (--url), used by calls answered from the
+	// terminal or a handler.
+	URL string
+	// APIURL is the REST API base (--api-url), used by everything else.
+	APIURL string
 
-	outMu sync.Mutex
+	outMu  sync.Mutex
+	outErr error
 }
 
 // EffectiveURL is the gateway URL: --url, then TELLO_URL, then the
@@ -74,20 +81,52 @@ func (a *App) EffectiveURL() string {
 	return tello.DefaultURL
 }
 
+// EnvAPIURL overrides the REST API base URL; DefaultAPIURL is production.
+const (
+	EnvAPIURL     = "TELLO_API_URL"
+	DefaultAPIURL = "https://api.telloai.io/v1"
+)
+
+// EffectiveAPIURL is the REST API base URL: --api-url, then TELLO_API_URL,
+// then production. A trailing slash is dropped so paths join cleanly.
+func (a *App) EffectiveAPIURL() string {
+	raw := a.APIURL
+	if raw == "" {
+		raw = a.Getenv(EnvAPIURL)
+	}
+	if raw == "" {
+		raw = DefaultAPIURL
+	}
+	return strings.TrimRight(raw, "/")
+}
+
+// ValidateAPIURL requires HTTPS except for loopback HTTP test servers.
+func ValidateAPIURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") ||
+		(u.Scheme == "http" && !isLoopbackHost(u.Hostname())) {
+		return NewError(KindUsage, "invalidUrl",
+			fmt.Sprintf("API URL must use HTTPS (HTTP is allowed for loopback only), with a host and no credentials, query or fragment (--api-url / %s)", EnvAPIURL))
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // NewClient resolves the API key and builds an unconnected client for the
 // effective URL. Register event handlers before calling Connect.
 func (a *App) NewClient() (*tello.Client, Credential, error) {
 	if err := ValidateURL(a.EffectiveURL()); err != nil {
 		return nil, Credential{}, err
 	}
-	if a.APIKey == nil {
-		return nil, Credential{}, NewError(KindInternal, "internal", "API key resolver not configured")
-	}
-	cred, err := a.APIKey()
+	cred, err := a.Credential()
 	if err != nil {
-		if errors.Is(err, ErrNoCredential) {
-			return nil, Credential{}, NewError(KindAuth, "apiKeyMissing", "no API key configured")
-		}
 		return nil, Credential{}, err
 	}
 	client, err := tello.NewClient(cred.Key, tello.WithURL(a.EffectiveURL()))
@@ -95,6 +134,22 @@ func (a *App) NewClient() (*tello.Client, Credential, error) {
 		return nil, Credential{}, NewError(KindAuth, "apiKeyMissing", err.Error())
 	}
 	return client, cred, nil
+}
+
+// Credential resolves the API key every command uses; a missing key is an
+// auth error (apiKeyMissing).
+func (a *App) Credential() (Credential, error) {
+	if a.APIKey == nil {
+		return Credential{}, NewError(KindInternal, "internal", "API key resolver not configured")
+	}
+	cred, err := a.APIKey()
+	if err != nil {
+		if errors.Is(err, ErrNoCredential) {
+			return Credential{}, NewError(KindAuth, "apiKeyMissing", "no API key configured")
+		}
+		return Credential{}, err
+	}
+	return cred, nil
 }
 
 // ValidateURL reports a gateway URL that is not ws:// or wss:// with a host

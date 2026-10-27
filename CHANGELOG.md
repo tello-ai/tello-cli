@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+- REST call safety: handle closed stdout, preserve unknown outcomes and
+  idempotency keys on output failures, and stop retries when output fails.
+  REST endpoints require HTTPS except on loopback; authentication and call
+  termination responses are validated.
+
+
+- Added REST-backed `agent list` and `crew list`, and portal-agent or crew
+  calls via `call create --agent|--crew` with start variables. Create returns
+  when accepted unless `--wait` follows the call; waiting can request an end
+  on timeout or interruption, but a failed request or lost confirmation means
+  the call may still be active.
+- Added `call get`, `call list`, and `call end` for account calls, including
+  WebSocket calls. `call get` replaces `call summary`; summaries, transcripts,
+  and credit can still be null immediately after a call ends.
+- Extended `call batch` to place portal-agent and crew calls sequentially.
+  Documented pre-dial temporary refusals are retried with a per-task REST
+  idempotency key within that batch run; an uncertain create outcome or
+  unfinished call stops the remaining batch. Restarting it generates new keys
+  and can redial tasks. Interactive and handler calls continue to use the
+  WebSocket gateway and do not receive REST idempotency protection.
+- REST creates use a generated or supplied idempotency key. Stored responses
+  are replayed for 24 hours, not indefinitely; if saving an accepted response
+  fails, the same key can cause another call after the in-progress record
+  expires. When an outcome is unknown, inspect call records before redialing.
+- Authentication verification now uses the REST API. `--api-url` and
+  `TELLO_API_URL` configure REST separately from the WebSocket `--url` and
+  `TELLO_URL`; `doctor` checks both.
+- JSON output includes `cli.status` for REST wait polling alongside existing
+  gateway frames and batch events. REST errors use camelCase codes, and failed
+  create requests can report the key in `data.idempotencyKey`.
+
 ## 0.1.0 (2026-10-01)
 
 First release. Built on `github.com/tello-ai/tello-go` v0.2.4 (WS protocol `1.0`).

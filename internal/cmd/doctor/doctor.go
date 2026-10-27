@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tello-ai/tello-cli/internal/app"
 	"github.com/tello-ai/tello-cli/internal/guide"
+	"github.com/tello-ai/tello-cli/internal/rest"
 	buildinfo "github.com/tello-ai/tello-cli/internal/version"
 	"github.com/tello-ai/tello-go/tello"
 )
@@ -51,7 +52,7 @@ type report struct {
 func New(a *app.App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check version, API key, gateway URL, authentication and skill files",
+		Short: "Check version, API key, API and gateway URLs, authentication and skill files",
 		Args:  app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			checks := runChecks(cmd.Context(), a)
@@ -80,17 +81,29 @@ func runChecks(ctx context.Context, a *app.App) []check {
 	cred, keyCheck := checkAPIKey(a)
 	checks = append(checks, keyCheck)
 
-	gatewayURL := a.EffectiveURL()
-	urlCheck := checkURL(gatewayURL)
-	checks = append(checks, urlCheck)
-
+	// REST API: --agent/--crew calls, call lookup and control, targets.
+	apiURLCheck := checkURL("apiUrl", a.EffectiveAPIURL(), app.ValidateAPIURL)
+	checks = append(checks, apiURLCheck)
 	switch {
 	case keyCheck.Status != statusOK:
 		checks = append(checks, skip("auth", "no usable API key"))
-	case urlCheck.Status != statusOK:
-		checks = append(checks, skip("auth", "invalid gateway URL"))
+	case apiURLCheck.Status != statusOK:
+		checks = append(checks, skip("auth", "invalid API URL"))
 	default:
-		checks = append(checks, checkAuth(ctx, a, cred.Key, gatewayURL))
+		checks = append(checks, checkAPIAuth(ctx, a, cred.Key))
+	}
+
+	// WebSocket gateway: calls answered with -i or a handler.
+	gatewayURL := a.EffectiveURL()
+	gatewayURLCheck := checkURL("gatewayUrl", gatewayURL, app.ValidateURL)
+	checks = append(checks, gatewayURLCheck)
+	switch {
+	case keyCheck.Status != statusOK:
+		checks = append(checks, skip("gateway", "no usable API key"))
+	case gatewayURLCheck.Status != statusOK:
+		checks = append(checks, skip("gateway", "invalid gateway URL"))
+	default:
+		checks = append(checks, checkGateway(ctx, a, cred.Key, gatewayURL))
 	}
 
 	return append(checks, checkSkills(a))
@@ -116,26 +129,38 @@ func checkAPIKey(a *app.App) (app.Credential, check) {
 	return cred, ok("apiKey", "from "+cred.Source)
 }
 
-func checkURL(raw string) check {
-	if err := app.ValidateURL(raw); err != nil {
-		return fail("gatewayUrl", app.Classify(err))
+func checkURL(name, raw string, validate func(string) error) check {
+	if err := validate(raw); err != nil {
+		return fail(name, app.Classify(err))
 	}
-	return ok("gatewayUrl", raw)
+	return ok(name, raw)
 }
 
-func checkAuth(ctx context.Context, a *app.App, key, gatewayURL string) check {
-	client, err := tello.NewClient(key, tello.WithURL(gatewayURL))
+func checkAPIAuth(ctx context.Context, a *app.App, key string) check {
+	c, err := rest.NewWithKey(a, key)
 	if err != nil {
 		return fail("auth", app.Classify(err))
+	}
+	start := time.Now()
+	if _, err := c.ListAgents(ctx); err != nil {
+		return fail("auth", app.Classify(err))
+	}
+	return ok("auth", fmt.Sprintf("API authenticated in %d ms", time.Since(start).Milliseconds()))
+}
+
+func checkGateway(ctx context.Context, a *app.App, key, gatewayURL string) check {
+	client, err := tello.NewClient(key, tello.WithURL(gatewayURL))
+	if err != nil {
+		return fail("gateway", app.Classify(err))
 	}
 	start := time.Now()
 	err = a.Connect(ctx, client)
 	elapsed := time.Since(start).Milliseconds()
 	_ = client.Close()
 	if err != nil {
-		return fail("auth", app.Classify(err))
+		return fail("gateway", app.Classify(err))
 	}
-	return ok("auth", fmt.Sprintf("authenticated in %d ms", elapsed))
+	return ok("gateway", fmt.Sprintf("gateway authenticated in %d ms", elapsed))
 }
 
 // checkSkills compares the skill files in the current directory with the

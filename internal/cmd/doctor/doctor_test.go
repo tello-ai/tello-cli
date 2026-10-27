@@ -13,6 +13,7 @@ import (
 
 	"github.com/tello-ai/tello-cli/internal/app"
 	"github.com/tello-ai/tello-cli/internal/cmd/doctor"
+	"github.com/tello-ai/tello-cli/internal/fakeapi"
 	"github.com/tello-ai/tello-cli/internal/fakegateway"
 	"github.com/tello-ai/tello-cli/internal/guide"
 )
@@ -104,14 +105,16 @@ func authGateway(t *testing.T) *fakegateway.Server {
 	})
 }
 
+func authAPI(t *testing.T) string { return fakeapi.New(t, "key-1").URL }
+
 func TestDoctorAllOK(t *testing.T) {
 	dir := t.TempDir()
 	for _, target := range guide.SkillTargets() {
 		installSkill(t, dir, target, nil)
 	}
-	r, exit := run(t, &app.App{APIKey: envKey("key-1"), URL: authGateway(t).URL, Getwd: wd(dir)})
+	r, exit := run(t, &app.App{APIKey: envKey("key-1"), APIURL: authAPI(t), URL: authGateway(t).URL, Getwd: wd(dir)})
 
-	want := "version=ok apiKey=ok gatewayUrl=ok auth=ok skills=ok"
+	want := "version=ok apiKey=ok apiUrl=ok auth=ok gatewayUrl=ok gateway=ok skills=ok"
 	if exit != 0 || !r.OK || statuses(r.Data.Checks) != want {
 		t.Fatalf("exit = %d, checks = %q, want %q", exit, statuses(r.Data.Checks), want)
 	}
@@ -120,14 +123,14 @@ func TestDoctorAllOK(t *testing.T) {
 func TestDoctorSkillWarningsDoNotFail(t *testing.T) {
 	dir := t.TempDir()
 	installSkill(t, dir, "claude", []byte("old template\n")) // stale; codex missing
-	r, exit := run(t, &app.App{APIKey: envKey("key-1"), URL: authGateway(t).URL, Getwd: wd(dir)})
+	r, exit := run(t, &app.App{APIKey: envKey("key-1"), APIURL: authAPI(t), URL: authGateway(t).URL, Getwd: wd(dir)})
 
-	checks := r.Data.Checks
-	if exit != 0 || !r.OK || checks[4].Name != "skills" || checks[4].Status != "warn" {
-		t.Fatalf("exit = %d, checks = %+v", exit, checks)
+	skills := r.Data.Checks[len(r.Data.Checks)-1]
+	if exit != 0 || !r.OK || skills.Name != "skills" || skills.Status != "warn" {
+		t.Fatalf("exit = %d, checks = %+v", exit, r.Data.Checks)
 	}
-	if !strings.Contains(checks[4].Detail, "stale") || !strings.Contains(checks[4].Detail, "not installed") {
-		t.Fatalf("skills detail = %q, want stale claude and missing codex", checks[4].Detail)
+	if !strings.Contains(skills.Detail, "stale") || !strings.Contains(skills.Detail, "not installed") {
+		t.Fatalf("skills detail = %q, want stale claude and missing codex", skills.Detail)
 	}
 }
 
@@ -146,31 +149,38 @@ func TestDoctorFailures(t *testing.T) {
 	}{
 		{
 			name:     "missing key",
-			app:      &app.App{APIKey: noKey, URL: "ws://127.0.0.1:1/sdk"},
+			app:      &app.App{APIKey: noKey, APIURL: "http://127.0.0.1:1/v1", URL: "ws://127.0.0.1:1/sdk"},
 			exit:     3,
 			code:     "apiKeyMissing",
-			statuses: "version=ok apiKey=fail:apiKeyMissing gatewayUrl=ok auth=skip skills=warn",
+			statuses: "version=ok apiKey=fail:apiKeyMissing apiUrl=ok auth=skip gatewayUrl=ok gateway=skip skills=warn",
 		},
 		{
-			name:     "bad url scheme",
-			app:      &app.App{APIKey: envKey("key-1"), URL: "https://api.telloai.io/sdk"},
+			name:     "bad api url scheme",
+			app:      &app.App{APIKey: envKey("key-1"), APIURL: "wss://api.telloai.io/v1", URL: authGateway(t).URL},
 			exit:     2,
 			code:     "invalidUrl",
-			statuses: "version=ok apiKey=ok gatewayUrl=fail:invalidUrl auth=skip skills=warn",
+			statuses: "version=ok apiKey=ok apiUrl=fail:invalidUrl auth=skip gatewayUrl=ok gateway=ok skills=warn",
+		},
+		{
+			name:     "bad gateway url scheme",
+			app:      &app.App{APIKey: envKey("key-1"), APIURL: authAPI(t), URL: "https://api.telloai.io/sdk"},
+			exit:     2,
+			code:     "invalidUrl",
+			statuses: "version=ok apiKey=ok apiUrl=ok auth=ok gatewayUrl=fail:invalidUrl gateway=skip skills=warn",
 		},
 		{
 			name:     "rejected key",
-			app:      &app.App{APIKey: envKey("bad-key"), URL: authGateway(t).URL},
+			app:      &app.App{APIKey: envKey("bad-key"), APIURL: authAPI(t), URL: authGateway(t).URL},
 			exit:     3,
 			code:     "unauthenticated",
-			statuses: "version=ok apiKey=ok gatewayUrl=ok auth=fail:unauthenticated skills=warn",
+			statuses: "version=ok apiKey=ok apiUrl=ok auth=fail:unauthenticated gatewayUrl=ok gateway=fail:unauthenticated skills=warn",
 		},
 		{
 			name:     "refused upgrade",
-			app:      &app.App{APIKey: envKey("key-1"), URL: "ws" + strings.TrimPrefix(refusing.URL, "http") + "/sdk"},
+			app:      &app.App{APIKey: envKey("key-1"), APIURL: authAPI(t), URL: "ws" + strings.TrimPrefix(refusing.URL, "http") + "/sdk"},
 			exit:     7,
 			code:     "connectionFailed",
-			statuses: "version=ok apiKey=ok gatewayUrl=ok auth=fail:connectionFailed skills=warn",
+			statuses: "version=ok apiKey=ok apiUrl=ok auth=ok gatewayUrl=ok gateway=fail:connectionFailed skills=warn",
 		},
 	}
 	for _, tt := range tests {

@@ -65,14 +65,16 @@ func TestJSONFlagReachesSubcommands(t *testing.T) {
 }
 
 func TestMissingAPIKeyExitsAuth(t *testing.T) {
-	code, _, stderr := run(t, "call", "summary", "call-1")
-	if code != 3 {
-		t.Fatalf("exit = %d, want 3 (stderr %q)", code, stderr)
+	for _, args := range [][]string{{"call", "get", "c_1"}, {"agent", "list"}} {
+		code, _, stderr := run(t, args...)
+		if code != 3 {
+			t.Fatalf("%v: exit = %d, want 3 (stderr %q)", args, code, stderr)
+		}
 	}
 }
 
 func TestGroupsPrintHelpWithoutSubcommand(t *testing.T) {
-	for _, args := range [][]string{nil, {"call"}, {"auth"}} {
+	for _, args := range [][]string{nil, {"call"}, {"auth"}, {"agent"}, {"crew"}} {
 		code, stdout, stderr := run(t, args...)
 		if code != 0 {
 			t.Fatalf("%v: exit = %d, want 0 (stderr %q)", args, code, stderr)

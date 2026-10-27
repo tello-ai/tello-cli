@@ -1,6 +1,6 @@
 # @tello-ai/cli
 
-`tello` places Tello phone calls, answers each turn live, and fetches call summaries from a terminal or a coding agent (Claude Code, Codex).
+`tello` places and follows Tello phone calls with a portal agent or crew, or lets you answer each turn live from a terminal or coding agent (Claude Code, Codex).
 
 ## Install
 
@@ -25,11 +25,13 @@ irm https://raw.githubusercontent.com/tello-ai/tello-cli/main/scripts/install.ps
 ## Usage
 
 ```sh
-tello auth login                       # store your API key
-tello call create --to +821012345678 -i   # place a call and answer from the terminal
-tello call summary <callId>            # transcript and summary of a finished call
-tello init                             # add the Tello skill for Claude Code and Codex
-tello guide coding-agent               # operating guide for coding agents
+tello auth login                          # store your API key
+tello agent list                          # list deployed agents
+tello call create --to +821012345678 --agent 12 --wait
+tello call get <callId>                   # status, transcript and summary
+tello call create --to +821012345678 -i   # answer turns yourself
+tello init                                # add the Tello skill for Claude Code and Codex
+tello guide coding-agent                  # operating guide for coding agents
 ```
 
 Every command accepts `--json` for one JSON object per line on stdout, and exit codes tell outcomes apart. Run `tello --help` for all commands.
