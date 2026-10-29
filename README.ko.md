@@ -11,7 +11,7 @@
 > 저장소: `tello-cli` · npm: `@tello-ai/cli` · 바이너리: `tello`
 >
 > 에이전트 설정은 Tello 포털에서 합니다. CLI는 에이전트나 크루를 선택해 통화를
-> 걸고, 조회하고, 종료를 요청합니다.
+> 걸고, 조회하고, 종료·전환을 요청합니다.
 
 ## 1. 설치
 
@@ -78,11 +78,19 @@ tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
 tello call get c_12345              # 상태, 시간, 요약, 전사, 요금
 tello call list --status completed --agent 12 --created-after 2026-10-20
 tello call end c_12345              # 진행 중인 통화의 종료 요청
+tello call transfer c_12345 --to +821012345678   # 통화 중인 통화를 번호로 전환 요청
 ```
 
 `list`는 최신순으로 한 페이지를 반환합니다. 다음 페이지가 있으면 같은 필터와
 `--cursor <nextCursor>`를 사용하세요. 날짜만 입력하면 UTC 자정으로 해석합니다.
 `end`는 종료 요청이 수락된 시점의 객체를 반환하므로 `get`으로 실제 종료를 확인하세요.
+`transfer`도 요청 접수일 뿐입니다. 번호를 호출하는 동안과 전환에 실패했을 때 모두
+`inProgress`이고, 성공하면 AI가 빠지고 전화 통화는 끝납니다(웹콜은 그 대화가 끝날
+때까지 `inProgress`일 수 있습니다). `get`으로 확인하세요. 다른 전환이 진행 중이거나
+통화가 끝나는 중, 또는 상담사가 이미 이어받은 통화에 보낸 요청은 접수되지만 효과가
+없으니 앞선 전환이 끝날 시간을 두고 다시 요청하세요. `--idempotency-key`가 없으면
+실행마다 새 키를 쓰며, 같은 키는 응답을 받지 못한 같은 요청을 다시 보낼 때만 쓰세요.
+아직 `inProgress`가 아닌 통화(발신 중, 상담사에게 넘기는 중)는 `callNotInProgress`(exit 75)입니다.
 이 명령들은 REST와 WebSocket으로 건 통화를 모두 조회·제어할 수 있습니다.
 
 `--timeout 10m`은 대기 중인 통화의 종료를 요청하며 REST 방식에서는 `--wait`가
@@ -97,7 +105,7 @@ tello call end c_12345              # 진행 중인 통화의 종료 요청
 ### 응답 유실과 멱등 재시도
 
 REST 발신마다 멱등 키를 사용합니다. 기본은 임의 생성이며 `--idempotency-key`로
-직접 지정할 수 있습니다. 프로세스나 결과 출력이 유실될 수 있다면 첫 요청부터 작업별
+직접 지정할 수 있습니다(1~255바이트, 쉼표·제어문자 불가). 프로세스나 결과 출력이 유실될 수 있다면 첫 요청부터 작업별
 고유 키를 지정해 별도로 보관하세요.
 
 ```sh
@@ -216,13 +224,13 @@ REST 통화 결과는 통화 객체이고, WebSocket 통화 결과는 `callId`�
 | --- | --- | --- |
 | 0 | — | 성공 |
 | 1 | `internal` | 예상하지 못한 오류 |
-| 2 | `usage` | 플래그·인자 오류, 잘못된 API·게이트웨이 URL(`invalidUrl`) |
+| 2 | `usage` | 플래그·인자 오류(형식이 틀린 통화 id·멱등 키 포함), 잘못된 API·게이트웨이 URL(`invalidUrl`) |
 | 3 | `auth` | API 키 없음·거부 |
 | 4 | `refused` | 계정 정책 거부: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, … |
-| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `callRejected`, … |
+| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, … |
 | 6 | `callEnded` | 통화가 완료되지 못함: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | 연결 실패·끊김(인증 중 끊김 포함) |
-| 8 | `server` | 서비스 측 오류: `callOutcomeUnknown`(발신됐을 수 있음), `internalError`, `callSetupFailed`, … |
+| 8 | `server` | 서비스 측 오류: `callOutcomeUnknown`(발신됐을 수 있음), `transferOutcomeUnknown`(전환이 요청됐을 수 있음), `internalError`, `callSetupFailed`, … |
 | 9 | `handler` | 핸들러 실행 실패, 통화 중 종료 |
 | 75 | `temporary` | 나중에 재시도: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `callProviderUnavailable`, … |
 | 130 | `interrupted` | Ctrl-C, SIGTERM |

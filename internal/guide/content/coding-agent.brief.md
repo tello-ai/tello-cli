@@ -14,7 +14,7 @@ Flow (portal agent answers; default)
 2. `tello agent list --json` (or `tello crew list --json`); confirm the id with the user.
 3. `tello call create --to +8210… --agent <id> [--var name=value]… --wait [--timeout 10m] --json`
 4. `--wait` streams `{"type":"cli.status","callId":"c_…","status":…}`; the last line is `{"type":"cli.result","ok":…}` with the call object in `data` (`status`, `durationSeconds`, `summary`, `transcript`, `creditCharged`; may be null right after the end).
-5. Later: `tello call get <callId> --json`. Also `tello call list [--status …] [--agent …] [--created-after …] --json`, `tello call end <callId> --json`.
+5. Later: `tello call get <callId> --json`. Also `tello call list [--status …] [--agent …] [--created-after …] --json`, `tello call end <callId> --json`, `tello call transfer <callId> --to <number> --json` (only when the user asked; accepted ≠ transferred, the call stays `inProgress` until it ends, check with `call get`).
 
 Flow (you answer each turn)
 - `tello call create --to +8210… [--prompt "…"] [--metadata @meta.json] [--timeout 10m] --json -- python3 handler.py` blocks until the call ends; `data` has `callId`, `status`.

@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode"
+
+	"github.com/spf13/cobra"
 
 	"github.com/tello-ai/tello-cli/internal/app"
 	"github.com/tello-ai/tello-cli/internal/rest"
@@ -44,4 +47,17 @@ func randomID() (string, error) {
 		return "", fmt.Errorf("generate id: %w", err)
 	}
 	return hex.EncodeToString(b[:]), nil
+}
+
+// checkIdempotencyKey refuses a given --idempotency-key the API rejects
+// (empty, over 255 bytes, a comma) or that cannot be sent as a header
+// (control characters). Without the flag a random key is used.
+func checkIdempotencyKey(cmd *cobra.Command, key string) error {
+	if !cmd.Flags().Changed("idempotency-key") {
+		return nil
+	}
+	if key == "" || len(key) > 255 || strings.ContainsRune(key, ',') || strings.ContainsFunc(key, unicode.IsControl) {
+		return app.Usagef("--idempotency-key must be 1 to 255 bytes without commas or control characters")
+	}
+	return nil
 }

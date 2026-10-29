@@ -44,7 +44,7 @@ internal/version/          빌드 시 주입되는 Version/Commit/Date
 internal/cli/              루트 명령 조립(--json, --api-url, --url)
 internal/rest/             REST API 클라이언트·응답과 오류 변환
 internal/cmd/target/       agent list / crew list
-internal/cmd/call/         call create / get / list / end / batch
+internal/cmd/call/         call create / get / list / end / transfer / batch
 internal/callrun/          WS 통화 1건 실행기(연결, 이벤트 큐, 응답 소스, 취소·타임아웃)
 internal/handler/          핸들러 자식 프로세스 NDJSON 브리지
 internal/cmd/auth/         auth login / status / logout
@@ -81,6 +81,7 @@ REST의 HTTP는 로컬 loopback에서만 허용한다. 잘못된 스킴이나 �
 | `tello call get <callId>` | REST·WS로 건 통화의 상태·시간·요약·전사·요금 조회 |
 | `tello call list [--status s] [--agent id] [--crew id] [--created-after t] [--created-before t] [--limit n] [--cursor c]` | 계정 통화를 최신순으로 한 페이지 조회 |
 | `tello call end <callId>` | 진행 중인 통화의 종료 요청. 실제 종료는 `get`으로 확인 |
+| `tello call transfer <callId> --to <번호> [--idempotency-key <key>]` | 통화 중인 통화를 전화번호로 즉시 전환 요청. 결과는 `get`으로 확인 |
 | `tello call batch --tasks <파일\|-> [--max-retries 3] [--retry-delay 5s] [--timeout <dur>] (--agent <id> \| --crew <id> \| -i \| -- <핸들러 명령…>)` | 여러 건을 순차 발신 |
 | `tello init [--target claude,codex] [--dir .]` | 코딩 에이전트 스킬 파일 생성·갱신 |
 | `tello guide coding-agent [--brief]` | 코딩 에이전트용 운영 지침 출력(`tello guide`만 치면 주제 목록) |
@@ -100,7 +101,7 @@ REST의 HTTP는 로컬 loopback에서만 허용한다. 잘못된 스킴이나 �
 {"type":"cli.result","ok":false,"error":{"kind":"refused","code":"insufficientCredit","message":"…","retryable":false,"exitCode":4},"data":{}}
 ```
 
-- `error.question`은 값이 있을 때만(`callRejected`). `data`는 실패 시에도 있을 수 있다(발신 요청 실패의 `idempotencyKey`, `missingVariables`, 또는 대기 중 실패의 마지막 통화 객체 등).
+- `error.question`은 값이 있을 때만(`callRejected`). `data`는 실패 시에도 있을 수 있다(발신·전환 요청 실패의 `idempotencyKey`, `missingVariables`, 또는 대기 중 실패의 마지막 통화 객체 등).
 - REST `--wait`는 상태가 바뀔 때 `cli.status`(`callId`, `status`, batch에서는 `index`도)를 쓴다. 폴링이므로 모든 중간 상태가 보인다는 보장은 없다. 성공 결과는 REST 통화 객체이며, `--wait`가 없으면 수락 시점의 객체다.
 - WS 이벤트 줄은 게이트웨이 수신 프레임을 **그대로** 쓴다(`call.created`, `user.turn`, `agent.turn`, `answer.accepted`, `dtmf.accepted`, `call.statusChanged`, 종단 이벤트, `error`). `auth.ok`와 SDK 합성 이벤트 `disconnected`는 쓰지 않는다. WS 통화의 결과는 `callId`, `status`다.
 - CLI가 만드는 줄은 `cli.` 접두사: `cli.result`, `cli.status`, `cli.task`(batch 건별 결과), `cli.retry`(batch 재시도).
@@ -112,15 +113,15 @@ REST의 HTTP는 로컬 loopback에서만 허용한다. 잘못된 스킴이나 �
 | --- | --- | --- | --- |
 | 0 | — | 성공 | |
 | 1 | `internal` | 예상하지 못한 오류 | |
-| 2 | `usage` | 플래그·인자 오류, 잘못된 REST·WS URL | `usage`, `invalidUrl` |
+| 2 | `usage` | 플래그·인자 오류(형식이 틀린 통화 id·멱등 키 포함), 잘못된 REST·WS URL | `usage`, `invalidUrl` |
 | 3 | `auth` | 키 없음·인증 실패 | `apiKeyMissing`, `unauthenticated` |
 | 4 | `refused` | 계정 정책 거부 | `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `callerNumberUnavailable` |
-| 5 | `invalid` | 요청 검증 오류 | `targetRequired`, `agentNotFound`, `crewNotFound`, `missingVariables`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `callRejected` |
+| 5 | `invalid` | 요청 검증 오류 | `targetRequired`, `agentNotFound`, `crewNotFound`, `missingVariables`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected` |
 | 6 | `callEnded` | 통화가 완료되지 못함 | `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | 연결 실패·끊김(인증 중 포함) | `connectionFailed`, `connectionClosed`, `sessionReplaced` |
-| 8 | `server` | 서비스 측 오류, 발신 결과 불명 | `callOutcomeUnknown`, `internalError`, `callSetupFailed` |
+| 8 | `server` | 서비스 측 오류, 발신·전환 결과 불명 | `callOutcomeUnknown`, `transferOutcomeUnknown`, `internalError`, `callSetupFailed` |
 | 9 | `handler` | 핸들러 프로세스 실패 | `handlerStartFailed`, `handlerExited` |
-| 75 | `temporary` | 나중에 재시도 | `concurrentLimitExceeded`, `duplicateCall`, `idempotencyInProgress`, `voiceGatewayUnavailable`, `callProviderUnavailable` |
+| 75 | `temporary` | 나중에 재시도 | `concurrentLimitExceeded`, `duplicateCall`, `idempotencyInProgress`, `voiceGatewayUnavailable`, `callProviderUnavailable`, `callNotInProgress` |
 | 130 | `interrupted` | Ctrl-C / SIGTERM | `interrupted` |
 
 `retryable`은 `kind == temporary`일 때만 true다. 이는 나중에 성공할 가능성의 분류이지 중복 발신이 불가능하다는 보장은 아니다. 분기는 `code`로 한다(`message`는 표시용).
@@ -150,7 +151,7 @@ REST는 기본적으로 생성 수락 시 반환하고, `--wait`는 `--poll-inte
 확인해야 한다. 폴링 오류로 대기를 중단할 때도 통화가 계속될 수 있다. REST HTTP
 요청 상한은 발신 생성 2분, 나머지 30초이며 사용자 지정 대기 제한은 별개다.
 
-REST 발신에는 임의 생성 또는 `--idempotency-key`로 지정한 키를 보낸다. 발신 요청
+REST 발신에는 임의 생성 또는 `--idempotency-key`로 지정한 키를 보낸다. 지정한 키는 1~255바이트이고 쉼표와 제어문자가 없어야 한다(API가 거부하거나 헤더로 보낼 수 없는 값). 아니면 요청 없이 usage 오류다. 발신 요청
 오류의 `data.idempotencyKey`는 해당 키다. 프로세스·결과 출력 유실에도 복구하려면
 첫 요청 전에 작업별 키를 직접 정하고 보관해야 한다. 수락 후 대기 실패에는 키 대신
 마지막 통화 객체가 반환될 수 있으므로 해당 id를 조회한다.
@@ -218,12 +219,18 @@ REST 멱등 키는 WS 통화에 적용되지 않는다. 실제 통화는 과금�
 - SDK 핸들러는 수신 고루틴에서 동기로 돈다. 핸들러에서 블로킹하면 ping 처리가 멈추므로, 이벤트는 무제한 큐에 넣고 메인 루프에서 처리한다.
 - `WaitClosed`는 종료 판정의 기준이다(오류 프레임이 통화를 끝내는지는 SDK가 requestId로 판단). 단, 통화 종료 채널이 닫힌 **뒤에** 마지막 이벤트가 핸들러로 emit 되므로, `WaitClosed`가 반환된 뒤 해당 이벤트(종단/`error`/`disconnected`)가 큐에 들어올 때까지(최대 2초) 기다렸다가 출력하고 끝낸다.
 
-## 9. `call get` / `call list` / `call end`
+## 9. `call get` / `call list` / `call end` / `call transfer`
 
-- 세 명령은 REST API를 이용하며 REST·WS, API·A2A·SDK 등으로 건 계정 통화를 조회하거나 제어한다. 통화 id는 `c_12345` 같은 문자열로 다룬다.
+- 네 명령은 REST API를 이용하며 REST·WS, API·A2A·SDK 등으로 건 계정 통화를 조회하거나 제어한다. 통화 id는 `c_12345` 같은 문자열로 다룬다. API가 출력하는 형식(`c_` + 앞자리 0 없는 양의 정수, int64 범위)이 아니면 요청 없이 usage 오류(exit 2)다. `c_01`처럼 서버가 `c_1`로 정규화해 돌려주는 id는 요청이 처리된 뒤 응답 검사에서 `invalidResponse`가 되므로 미리 막는다.
 - `call get <callId>`는 진행 중이거나 끝난 통화 객체를 반환한다. `status`, 시간, `endReason`, `summary`, `transcript`, `creditCharged` 등을 확인한다. 종료 직후에도 요약·전사·요금은 null일 수 있으므로 필요하면 나중에 다시 조회한다.
 - `call list`는 최신순으로 한 페이지를 반환한다. JSON 결과의 `data`는 `{"data":[통화…],"nextCursor":…}`이며 `nextCursor`가 있으면 다른 필터를 유지한 채 `--cursor`로 다음 페이지를 요청한다. 필터는 `--status`, `--agent`, `--crew`, `--created-after`, `--created-before`이고 `--limit`은 1~100(기본 20)이다. 날짜만 지정하면 UTC 자정이며 시각에는 시간대를 지정한다.
 - `call end <callId>`는 진행 중인 통화의 종료를 요청한다. 응답은 요청 수락 시점의 객체이므로 `call get`으로 실제 종료를 확인한다. 이미 종료된 통화는 `callNotActive`(exit 5)다.
+- `call transfer <callId> --to <번호>`는 통화를 그 번호로 넘기도록 요청한다(`POST /calls/{callId}/transfer`, 본문 `{"mode":"cold","destination":{"type":"phone","target":…}}`). API가 지원하는 값이 즉시 전환·전화번호뿐이라 고정한다. 번호 정규화는 서버가 한다. `end`와 달리 출처를 따지지 않아 수신 전화도 넘길 수 있다.
+  - 응답 `202`는 접수일 뿐이다. 번호를 호출하는 동안과 전환에 실패했을 때 모두 `inProgress`이고, 성공하면 AI가 빠지고 전화 통화는 끝난다. 브라우저로 연결된 통화(웹콜 등)는 성공 뒤에도 그 대화가 끝날 때까지 `inProgress`일 수 있다. 성공 여부를 알려 주는 필드가 없어 `--wait`는 두지 않는다. `202`가 아닌 성공 응답이나 다른 통화 객체는 `invalidResponse`다.
+  - 접수돼도 실행되지 않는 요청이 있다. 통화가 끝나는 중이거나 다른 전환(이 API든 AI의 전환 도구든)이 진행 중일 때 온 요청, 상담APP 상담사가 이미 이어받은 통화에 온 요청은 `202`이지만 효과가 없다. 실패한 것처럼 보여도 앞선 전환이 끝날 시간을 두고 다시 요청한다.
+  - `Idempotency-Key`는 필수다. `--idempotency-key`가 없으면 실행마다 새 키를 만든다. 서버는 `202`만 저장하므로 같은 키로는 실패한 전환을 다시 시도할 수 없다(저장된 `202`만 돌아온다). 같은 키는 응답이 유실된 같은 요청을 다시 보낼 때만 쓴다. 거절된 요청은 저장되지 않아 같은 키로 다시 실행되며, 한 통화가 두 번 넘어가지 않는 것은 키가 아니라 VGW의 «통화당 한 번 성공» 규칙 덕분이다. 키 공간은 `call create`와 같으므로 생성에 쓴 키를 쓰지 않는다.
+  - 오류의 `data.idempotencyKey`는 보낸 키다. 전환이 요청됐을 수 있는 경우 — 연결 실패·응답 유실, Ctrl-C(`interrupted`, exit 130, 서버는 끊겨도 처리를 계속한다), 문서에 없는 5xx(프록시 오류 페이지 등, `transferOutcomeUnknown` exit 8), `voiceGatewayUnavailable`(늦게 전달돼 전환될 수 있음) — 에는 `call get`으로 확인한 뒤 같은 키로 다시 보낸다. 202 뒤 결과 출력에 실패하면 call id와 키를 stderr 경고로 남긴다.
+  - `callNotInProgress`(exit 75)는 통화가 아직 `inProgress`가 아니라는 뜻이다(발신 중, 또는 상담APP 상담사에게 넘기는 중). `inProgress`가 된 뒤 같은 요청이 성공할 수 있다. 끝난 통화는 `callNotActive`, 번호 형식 오류는 `invalidTransferRequest`(exit 5)다.
 
 ## 10. `call batch`
 

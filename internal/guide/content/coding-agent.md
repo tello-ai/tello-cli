@@ -11,7 +11,7 @@ callee:
   the callee speaks, a program you provide (the handler) decides what the
   Tello agent says next. The CLI uses the WebSocket gateway.
 
-`tello call get`, `list` and `end` work for calls placed either way.
+`tello call get`, `list`, `end` and `transfer` work for calls placed either way.
 
 ## Safety rules
 
@@ -33,6 +33,8 @@ callee:
   if response storage fails, the same key can dial again after five minutes.
   On `callOutcomeUnknown` or an ambiguous network failure, check
   `tello call list` and ask the user before retrying.
+- **Transfer a call only when the user asked for it.** `tello call transfer`
+  hands a live call, inbound calls included, to another real phone number.
 - **Never print, echo, log or commit API keys.** Do not pass a key as a flag
   or argument, and do not read the keychain or `credentials.json` yourself.
   If no key is configured, ask the user to run `tello auth login` in their own
@@ -77,6 +79,7 @@ callee:
 | `tello call get <callId>` | A call's status, timing, summary, transcript and credit |
 | `tello call list [--status s] [--agent id] [--crew id] [--created-after t] [--created-before t] [--limit n] [--cursor c]` | Calls of the account, newest first, one page |
 | `tello call end <callId>` | Ask the service to end a live call |
+| `tello call transfer <callId> --to <number> [--idempotency-key <key>]` | Ask the service to transfer an answered call to a phone number |
 | `tello call batch --tasks <file\|-> (--agent <id> \| --crew <id> \| -i \| -- <handler argv…>) [--max-retries 3] [--retry-delay 5s] [--timeout <dur>]` | Several calls, one after another |
 | `tello init [--target claude,codex] [--dir .]` | Install or refresh the agent skill files |
 | `tello guide` | List guide topics |
@@ -108,7 +111,7 @@ check `call list` or `call get` before retrying. Call IDs are strings.
 - Branch on `error.code` (and the exit code); `message` is for display only.
   `error.question` is present only for a handler call's `callRejected`. `data`
   may be present on failure too: the call so far, `idempotencyKey` of a failed
-  create, or `missingVariables` (names to pass with `--var`).
+  create or transfer, or `missingVariables` (names to pass with `--var`).
 - Exceptions, which end without a `cli.result` line: `--help` / `help` and
   `--version` (plain text, exit 0); a second Ctrl-C / SIGTERM (immediate exit
   130); Ctrl-C at the hidden `tello auth login` prompt (exit 130). Do not pass
@@ -208,16 +211,16 @@ printf '%s\n' '{"type":"cli.start","to":"+821012345678","prompt":"","metadata":{
 | --- | --- | --- | --- |
 | 0 | | success | |
 | 1 | `internal` | unexpected error | |
-| 2 | `usage` | bad flags or arguments | `usage`, `invalidUrl` |
+| 2 | `usage` | bad flags or arguments, including a malformed call id or `--idempotency-key` | `usage`, `invalidUrl` |
 | 3 | `auth` | no key or key rejected | `apiKeyMissing`, `unauthenticated` |
 | 4 | `refused` | account policy refusal; retrying will not help | `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `destinationBlocked`, `callerNumberUnavailable`, `noRepresentativeNumber` |
-| 5 | `invalid` | request rejected by validation | `targetRequired`, `toRequired`, `agentNotFound`, `crewNotFound`, `agentInactive`, `crewInactive`, `publicationRevoked`, `missingVariables`, `invalidVariables`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `callControlUnsupported`, `invalidQuery`, `invalidCursor`, `callRejected`, `dtmfDigitsInvalid`, `noActiveCall` |
+| 5 | `invalid` | request rejected by validation | `targetRequired`, `toRequired`, `agentNotFound`, `crewNotFound`, `agentInactive`, `crewInactive`, `publicationRevoked`, `missingVariables`, `invalidVariables`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callControlUnsupported`, `invalidQuery`, `invalidCursor`, `callRejected`, `dtmfDigitsInvalid`, `noActiveCall` |
 | 6 | `callEnded` | the call did not complete | `noAnswer`, `callFailed`, `cancelled`, `timeout` (`--timeout`), `batchIncomplete` |
 | 7 | `connection` | could not connect, or the connection dropped (also during authentication) | `connectionFailed`, `connectionClosed`, `sessionReplaced` |
-| 8 | `server` | service-side error | `callOutcomeUnknown`, `internalError`, `callProviderUnauthorized`, `callSetupFailed` |
+| 8 | `server` | service-side error | `callOutcomeUnknown`, `transferOutcomeUnknown`, `internalError`, `callProviderUnauthorized`, `callSetupFailed` |
 | 9 | `handler` | handler process failed | `handlerStartFailed`, `handlerExited` |
-| 75 | `temporary` | try again later | `concurrentLimitExceeded`, `duplicateCall`, `idempotencyInProgress`, `voiceGatewayUnavailable`, `callRecordUnavailable`, `creditCheckUnavailable`, `callProviderDraining`, `callProviderUnavailable`, `callAlreadyActive` |
-| 130 | `interrupted` | Ctrl-C / SIGTERM; call termination is requested when possible | `interrupted` |
+| 75 | `temporary` | try again later | `concurrentLimitExceeded`, `duplicateCall`, `idempotencyInProgress`, `voiceGatewayUnavailable`, `callRecordUnavailable`, `creditCheckUnavailable`, `callProviderDraining`, `callProviderUnavailable`, `callAlreadyActive`, `callNotInProgress` |
+| 130 | `interrupted` | Ctrl-C / SIGTERM; call termination is requested when possible (an interrupted `call transfer` may still have been requested) | `interrupted` |
 
 `call create` with `--wait`, `-i` or a handler succeeds (exit 0) only when the
 call completes. Without `--wait` it succeeds once the call is accepted.
@@ -243,13 +246,15 @@ call completes. Without `--wait` it succeeds once the call is accepted.
   `cli.task` line: a task with `callId` placed a call; `error.code` and
   `error.exitCode` say why it failed. Re-run only the tasks that need it.
 
-## `call get`, `call list`, `call end`
+## `call get`, `call list`, `call end`, `call transfer`
 
 - `tello call get <callId> --json`: `data` is the call object (`id`, `status`,
   `direction`, `source`, `agentId`, `crewId`, `createdAt`, `startedAt`,
   `endedAt`, `durationSeconds`, `endReason`, `transcript`, `summary`,
   `creditCharged`). Fields not available yet are null; judge progress by
   `status`. Unknown ids and other accounts' calls are `callNotFound` (exit 5).
+  Pass ids exactly as printed (`c_` and digits, no leading zeros); anything
+  else is a usage error (exit 2) and sends no request.
 - `tello call list --json`: `data` is `{"data":[calls…],"nextCursor":…}`.
   Pass a non-null `nextCursor` as `--cursor`, keeping the other filters, for
   the next page. Dates with a zone like `2026-10-20T09:00:00+09:00`; a plain
@@ -259,6 +264,31 @@ call completes. Without `--wait` it succeeds once the call is accepted.
   accepted, not the outcome: check with `call get`. An ended call is
   `callNotActive` (exit 5). Ending after the callee answered is billed for
   the time talked.
+- `tello call transfer <callId> --to <number> --json` asks the service to
+  hand an answered call (any source, inbound included) over to a phone
+  number. `data` is the call when the request was accepted, not the outcome:
+  the call stays `inProgress` while the number is dialed and also when the
+  transfer fails. Once it succeeds the AI leaves and a phone call ends; a
+  browser (web) call can stay `inProgress` until that conversation ends.
+  There is no field that says the transfer succeeded; check `status` with
+  `call get`.
+- An accepted transfer can do nothing: a request that arrives while the call
+  is ending, while another transfer (this API or the agent's own transfer
+  tool) is running, or after a portal counselor took the call over is
+  accepted but dropped. Before trying again, give the previous transfer time
+  to finish, and ask the user.
+- `callNotInProgress` (exit 75): the call is not `inProgress` yet (still
+  dialing, or being handed to a portal counselor); retry once `call get`
+  shows `inProgress`. An ended call is `callNotActive` and a malformed number
+  `invalidTransferRequest` (exit 5).
+- Each `call transfer` run sends a new idempotency key unless
+  `--idempotency-key` is given; failures report it in `data.idempotencyKey`.
+  The transfer may have been requested after a connection error, Ctrl-C
+  (`interrupted`), `transferOutcomeUnknown` (exit 8) or
+  `voiceGatewayUnavailable`: check `call get`, then resend only with the same
+  key. To try again after a transfer that was accepted but did not happen,
+  use a new key: the same key only replays the stored acceptance. Never reuse
+  a create key.
 
 ## Batch
 

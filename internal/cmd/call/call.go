@@ -1,5 +1,5 @@
-// Package call implements `tello call create | get | list | end | batch`
-// (docs/design.md sections 8 to 10).
+// Package call implements `tello call create | get | list | end | transfer |
+// batch` (docs/design.md sections 8 to 10).
 package call
 
 import (
@@ -23,7 +23,7 @@ func New(a *app.App) *cobra.Command {
 		Args:  cobra.ArbitraryArgs,
 		RunE:  a.GroupRunE,
 	}
-	cmd.AddCommand(newCreate(a), newGet(a), newList(a), newEnd(a), newBatch(a))
+	cmd.AddCommand(newCreate(a), newGet(a), newList(a), newEnd(a), newTransfer(a), newBatch(a))
 	return cmd
 }
 

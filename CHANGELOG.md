@@ -5,6 +5,11 @@
   idempotency keys on output failures, and stop retries when output fails.
   REST endpoints require HTTPS except on loopback; authentication and call
   termination responses are validated.
+- `call get`, `call end` and `call transfer` refuse call ids not in the form
+  the API prints (`c_` and a positive integer without leading zeros), and
+  `--idempotency-key` refuses keys the API rejects (empty, over 255 bytes, a
+  comma) or that cannot be sent (control characters), with a usage error
+  (exit 2) before any request.
 
 
 - Added REST-backed `agent list` and `crew list`, and portal-agent or crew
@@ -15,6 +20,15 @@
 - Added `call get`, `call list`, and `call end` for account calls, including
   WebSocket calls. `call get` replaces `call summary`; summaries, transcripts,
   and credit can still be null immediately after a call ends.
+- Added `call transfer <callId> --to <number>`: requests an immediate transfer
+  of an answered call (inbound calls included) to a phone number. The result
+  is the call at acceptance; the call stays `inProgress` while the transfer
+  runs or after it fails, and a request sent while another transfer runs is
+  accepted but dropped, so check it with `call get`. Each run sends a new
+  idempotency key unless `--idempotency-key` is given; failures, Ctrl-C and
+  output failures after acceptance report it. Undocumented 5xx responses are
+  `transferOutcomeUnknown` (exit 8, not retryable). `callNotInProgress` (still
+  dialing or being handed to a counselor) is retryable (exit 75).
 - Extended `call batch` to place portal-agent and crew calls sequentially.
   Documented pre-dial temporary refusals are retried with a per-task REST
   idempotency key within that batch run; an uncertain create outcome or

@@ -62,6 +62,9 @@ func newCreate(a *app.App) *cobra.Command {
 				case timeout > 0 && !wait:
 					return app.Usagef("--timeout needs --wait: without it the command returns while the call runs")
 				}
+				if err := checkIdempotencyKey(cmd, idempotencyKey); err != nil {
+					return err
+				}
 				variables, err := parseVars(vars)
 				if err != nil {
 					return err

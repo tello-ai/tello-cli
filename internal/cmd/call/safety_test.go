@@ -99,6 +99,30 @@ func TestBatchStopsIfOutputFails(t *testing.T) {
 	}
 }
 
+// An accepted transfer whose result cannot be written must still leave the
+// call ID and the key on stderr.
+func TestTransferOutputFailureKeepsKey(t *testing.T) {
+	api := fakeapi.New(t, "key-1")
+	api.Statuses("inProgress")
+	runAPI(t, api.URL, "", true, "create", "--agent", "12", "--to", "+82")
+	var stderr bytes.Buffer
+	a := &app.App{
+		Stdout: failingWriter{}, Stderr: &stderr, JSON: true,
+		Getenv: func(string) string { return "" },
+		APIKey: func() (app.Credential, error) { return app.Credential{Key: "key-1"}, nil },
+		APIURL: api.URL,
+	}
+	cmd := call.New(a)
+	cmd.SetArgs([]string{"transfer", "c_1", "--to", "+821099998888", "--idempotency-key", "t-7"})
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected output failure")
+	}
+	if len(api.Transfers()) != 1 || !bytes.Contains(stderr.Bytes(), []byte("c_1")) || !bytes.Contains(stderr.Bytes(), []byte("t-7")) {
+		t.Fatalf("stderr %q, want the call ID and key", stderr.String())
+	}
+}
+
 func TestBatchDoesNotRetryAfterRetryEventOutputFails(t *testing.T) {
 	api := fakeapi.New(t, "key-1")
 	api.FailCreates(fakeapi.Failure{Status: 409, Code: "concurrent_limit_exceeded"})

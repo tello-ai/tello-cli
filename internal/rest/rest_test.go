@@ -58,6 +58,8 @@ func TestErrorEnvelopeClassification(t *testing.T) {
 		{409, "idempotency_in_progress", "idempotencyInProgress", 75, true},
 		{409, "idempotency_key_reused", "idempotencyKeyReused", 5, false},
 		{409, "call_not_active", "callNotActive", 5, false},
+		// Transfer before the callee answers: retry once the call is inProgress.
+		{409, "call_not_in_progress", "callNotInProgress", 75, true},
 		{503, "voice_gateway_unavailable", "voiceGatewayUnavailable", 75, true},
 		{502, "call_outcome_unknown", "callOutcomeUnknown", 8, false},
 		{500, "internal_error", "internalError", 8, false},
@@ -130,6 +132,35 @@ func TestCreateCallRequest(t *testing.T) {
 		t.Fatalf("body = %s", b)
 	}
 	if call["id"] != "c_9007199254740993" || rest.Status(call) != "dialing" || call["durationSeconds"] != nil {
+		t.Fatalf("call = %v", call)
+	}
+}
+
+func TestTransferCallRequest(t *testing.T) {
+	var (
+		gotPath, gotIdem string
+		gotBody          []byte
+	)
+	c := client(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method %s, want POST", r.Method)
+		}
+		gotPath, gotIdem = r.URL.Path, r.Header.Get("Idempotency-Key")
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"id":"c_1","status":"inProgress"}`)
+	})
+	call, err := c.TransferCall(context.Background(), "c_1", "+821012345678", "transfer-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/v1/calls/c_1/transfer" || gotIdem != "transfer-1" {
+		t.Fatalf("path %q key %q", gotPath, gotIdem)
+	}
+	if string(gotBody) != `{"mode":"cold","destination":{"type":"phone","target":"+821012345678"}}` {
+		t.Fatalf("body = %s", gotBody)
+	}
+	if rest.ID(call) != "c_1" || rest.Status(call) != "inProgress" {
 		t.Fatalf("call = %v", call)
 	}
 }

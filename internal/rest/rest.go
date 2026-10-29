@@ -109,7 +109,7 @@ func (q ListCalls) values() url.Values {
 // CreateCall places a call. idempotencyKey makes retries of the same request
 // return the first response instead of dialing again.
 func (c *Client) CreateCall(ctx context.Context, body CreateCall, idempotencyKey string) (Object, error) {
-	call, err := c.do(ctx, http.MethodPost, "/calls", nil, body, idempotencyKey)
+	call, err := c.do(ctx, opCreate, http.MethodPost, "/calls", nil, body, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (c *Client) CreateCall(ctx context.Context, body CreateCall, idempotencyKey
 
 // GetCall returns one call of the account.
 func (c *Client) GetCall(ctx context.Context, callID string) (Object, error) {
-	call, err := c.do(ctx, http.MethodGet, "/calls/"+url.PathEscape(callID), nil, nil, "")
+	call, err := c.do(ctx, opRead, http.MethodGet, "/calls/"+url.PathEscape(callID), nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,34 @@ func (c *Client) GetCall(ctx context.Context, callID string) (Object, error) {
 // EndCall asks the service to end a live call. The returned call is the
 // state when the request was accepted, not the final one.
 func (c *Client) EndCall(ctx context.Context, callID string) (Object, error) {
-	call, err := c.do(ctx, http.MethodPost, "/calls/"+url.PathEscape(callID)+"/end", nil, nil, "")
+	call, err := c.do(ctx, opEnd, http.MethodPost, "/calls/"+url.PathEscape(callID)+"/end", nil, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	return validateCall(call, callID)
+}
+
+// transferCall is the POST /calls/{id}/transfer body. The API supports only
+// an immediate (cold) transfer to a phone number.
+type transferCall struct {
+	Mode        string              `json:"mode"`
+	Destination transferDestination `json:"destination"`
+}
+
+type transferDestination struct {
+	Type   string `json:"type"`
+	Target string `json:"target"`
+}
+
+// TransferCall asks the service to hand a live call over to the phone number
+// to. idempotencyKey is required by the API; resending an accepted request
+// with the same key replays the stored 202 instead of transferring again.
+// Refused requests are not stored, so the same key runs them again. The
+// returned call is the state when the request was accepted; the call stays
+// inProgress while the transfer runs.
+func (c *Client) TransferCall(ctx context.Context, callID, to, idempotencyKey string) (Object, error) {
+	body := transferCall{Mode: "cold", Destination: transferDestination{Type: "phone", Target: to}}
+	call, err := c.do(ctx, opTransfer, http.MethodPost, "/calls/"+url.PathEscape(callID)+"/transfer", nil, body, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +164,12 @@ func (c *Client) EndCall(ctx context.Context, callID string) (Object, error) {
 
 // ListCalls returns one page: {"data": [...], "nextCursor": string|null}.
 func (c *Client) ListCalls(ctx context.Context, q ListCalls) (Object, error) {
-	return c.do(ctx, http.MethodGet, "/calls", q.values(), nil, "")
+	return c.do(ctx, opRead, http.MethodGet, "/calls", q.values(), nil, "")
 }
 
 // ListAgents returns {"data": [{"id","name","description"}]}.
 func (c *Client) ListAgents(ctx context.Context) (Object, error) {
-	result, err := c.do(ctx, http.MethodGet, "/agents", nil, nil, "")
+	result, err := c.do(ctx, opAgents, http.MethodGet, "/agents", nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -154,10 +181,33 @@ func (c *Client) ListAgents(ctx context.Context) (Object, error) {
 
 // ListCrews returns {"data": [{"id","name","description"}]}.
 func (c *Client) ListCrews(ctx context.Context) (Object, error) {
-	return c.do(ctx, http.MethodGet, "/crews", nil, nil, "")
+	return c.do(ctx, opRead, http.MethodGet, "/crews", nil, nil, "")
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any, idempotencyKey string) (Object, error) {
+// operation is what a request does. It picks the HTTP timeout, the success
+// status the API documents and how a lost or failed response is reported.
+type operation int
+
+const (
+	opRead     operation = iota // get, list, crews: no side effects
+	opAgents                    // agent list, also the key check: exactly 200
+	opCreate                    // places a call
+	opEnd                       // asks to end a call: exactly 202
+	opTransfer                  // asks to transfer a call: exactly 202
+)
+
+// wantStatus is the only success status accepted, or 0 for any 2xx.
+func (op operation) wantStatus() int {
+	switch op {
+	case opAgents:
+		return http.StatusOK
+	case opEnd, opTransfer:
+		return http.StatusAccepted
+	}
+	return 0
+}
+
+func (c *Client) do(ctx context.Context, op operation, method, path string, query url.Values, body any, idempotencyKey string) (Object, error) {
 	target := c.base + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
@@ -185,7 +235,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 
 	httpClient := c.http
-	if method == http.MethodPost && path == "/calls" {
+	if op == opCreate {
 		httpClient = c.createHTTP
 	}
 	resp, err := httpClient.Do(req)
@@ -193,8 +243,11 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		if method == http.MethodPost && path == "/calls" {
+		switch op {
+		case opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionFailed", "create request failed; call outcome may be unknown, check the call list before retrying")
+		case opTransfer:
+			return nil, app.NewError(app.KindConnection, "connectionFailed", "transfer request failed; the transfer may have been requested, check the call before retrying with the same idempotency key")
 		}
 		return nil, app.NewError(app.KindConnection, "connectionFailed", fmt.Sprintf("%s request failed", method))
 	}
@@ -204,22 +257,29 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		if method == http.MethodPost && path == "/calls" {
+		switch op {
+		case opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionClosed", "create response could not be read; call outcome may be unknown, check the call list before retrying")
+		case opTransfer:
+			return nil, app.NewError(app.KindConnection, "connectionClosed", "transfer response could not be read; the transfer may have been requested, check the call before retrying with the same idempotency key")
 		}
 		return nil, app.NewError(app.KindConnection, "connectionClosed", "could not read response")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		apiErr := apiError(resp.StatusCode, raw)
-		if method == http.MethodPost && path == "/calls" && resp.StatusCode == http.StatusServiceUnavailable {
-			if _, known := kinds[apiErr.Code]; !known {
+		if _, known := kinds[apiErr.Code]; !known {
+			switch {
+			case op == opCreate && resp.StatusCode == http.StatusServiceUnavailable:
 				return nil, app.NewError(app.KindServer, "callOutcomeUnknown", "call outcome is unknown; check the call list before retrying")
+			case op == opTransfer && resp.StatusCode >= 500:
+				// Not a documented transfer error (e.g. a proxy page): the
+				// service may have taken the request before it failed.
+				return nil, app.NewError(app.KindServer, "transferOutcomeUnknown", fmt.Sprintf("transfer outcome is unknown (%s); the transfer may have been requested, check the call before retrying with the same idempotency key", apiErr.Message))
 			}
 		}
 		return nil, apiErr
 	}
-	if (method == http.MethodGet && path == "/agents" && resp.StatusCode != http.StatusOK) ||
-		(method == http.MethodPost && strings.HasPrefix(path, "/calls/") && strings.HasSuffix(path, "/end") && resp.StatusCode != http.StatusAccepted) {
+	if want := op.wantStatus(); want != 0 && resp.StatusCode != want {
 		return nil, app.NewError(app.KindServer, "invalidResponse", "unexpected API response status")
 	}
 	var obj Object
@@ -289,13 +349,19 @@ var kinds = map[string]app.Kind{
 	"destinationBlocked":      app.KindRefused,
 	"callerNumberUnavailable": app.KindRefused,
 
-	// Pre-dial refusals that clear by themselves; retry with the same key.
+	// Refusals that clear by themselves; retry with the same key. A transfer
+	// refused with voiceGatewayUnavailable can still go through late (a call
+	// is transferred at most once), so check the call before resending it.
 	"concurrentLimitExceeded": app.KindTemporary,
 	"duplicateCall":           app.KindTemporary,
 	"idempotencyInProgress":   app.KindTemporary,
 	"creditCheckUnavailable":  app.KindTemporary,
 	"callRecordUnavailable":   app.KindTemporary,
 	"voiceGatewayUnavailable": app.KindTemporary,
+
+	// Transfer of a call that is not inProgress yet (still dialing, or being
+	// handed to a portal counselor): the same request can succeed later.
+	"callNotInProgress": app.KindTemporary,
 
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,

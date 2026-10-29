@@ -105,14 +105,7 @@ func createCall(ctx context.Context, c *rest.Client, req rest.CreateCall, key st
 			if r.err == nil {
 				return r.call, nil
 			}
-			e := app.Classify(r.err)
-			data, _ := e.Data.(map[string]any)
-			if data == nil {
-				data = map[string]any{}
-			}
-			data["idempotencyKey"] = key
-			e.Data = data
-			return nil, e
+			return nil, withIdempotencyKey(r.err, key)
 		}
 	case <-ctx.Done():
 		timer := time.NewTimer(endGrace)

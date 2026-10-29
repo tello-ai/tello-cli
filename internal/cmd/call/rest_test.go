@@ -2,6 +2,9 @@ package call_test
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -201,6 +204,157 @@ func TestGetHumanOutput(t *testing.T) {
 		if !strings.Contains(r.stdout, want) {
 			t.Fatalf("human output missing %q:\n%s", want, r.stdout)
 		}
+	}
+}
+
+func TestTransferAcceptedReturnsCall(t *testing.T) {
+	t.Parallel()
+	api := fakeapi.New(t, "key-1")
+	api.Statuses("inProgress")
+	runAPI(t, api.URL, "", true, "create", "--agent", "12", "--to", "+82")
+
+	r := runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "+821099998888", "--idempotency-key", "transfer-1")
+	if data, _ := r.last(t)["data"].(map[string]any); r.exit != 0 || data["id"] != "c_1" || data["status"] != "inProgress" {
+		t.Fatalf("exit %d data %v stderr:\n%s", r.exit, data, r.stderr)
+	}
+	for range 2 {
+		if r = runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "+821099998888"); r.exit != 0 {
+			t.Fatalf("exit %d stderr:\n%s", r.exit, r.stderr)
+		}
+	}
+
+	transfers := api.Transfers()
+	if len(transfers) != 3 || transfers[0].CallID != "c_1" || transfers[0].IdempotencyKey != "transfer-1" {
+		t.Fatalf("transfers = %+v", transfers)
+	}
+	if got := jsonOf(transfers[0].Body); got != `{"destination":{"target":"+821099998888","type":"phone"},"mode":"cold"}` {
+		t.Fatalf("body = %s", got)
+	}
+	// Without --idempotency-key each run gets its own key: a key derived from
+	// the request would replay the stored 202 and make a new attempt a no-op.
+	if a, b := transfers[1].IdempotencyKey, transfers[2].IdempotencyKey; a == "" || a == b {
+		t.Fatalf("default keys %q and %q, want two distinct keys", a, b)
+	}
+}
+
+func TestTransferRefusals(t *testing.T) {
+	t.Parallel()
+	api := fakeapi.New(t, "key-1")
+	api.Statuses("dialing", "completed")
+	runAPI(t, api.URL, "", true, "create", "--agent", "12", "--to", "+82")
+
+	r := runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "+821099998888", "--idempotency-key", "t-1")
+	if data := r.failed(t, 75, "callNotInProgress"); data["idempotencyKey"] != "t-1" {
+		t.Fatalf("data = %v, want the key to retry with", data)
+	}
+	runAPI(t, api.URL, "", true, "get", "c_1")
+	r = runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "+821099998888")
+	r.failed(t, 5, "callNotActive")
+	r = runAPI(t, api.URL, "", true, "transfer", "c_404", "--to", "+821099998888")
+	r.failed(t, 5, "callNotFound")
+}
+
+func TestTransferServiceRefusalsReportKey(t *testing.T) {
+	t.Parallel()
+	api := fakeapi.New(t, "key-1")
+	api.Statuses("inProgress")
+	runAPI(t, api.URL, "", true, "create", "--agent", "12", "--to", "+82")
+	api.FailTransfers(fakeapi.Failure{Status: 503, Code: "voice_gateway_unavailable"}, fakeapi.Failure{Status: 400, Code: "invalid_transfer_request"})
+
+	r := runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "+821099998888", "--idempotency-key", "t-1")
+	if data := r.failed(t, 75, "voiceGatewayUnavailable"); data["idempotencyKey"] != "t-1" {
+		t.Fatalf("data = %v, want the key to resend with", data)
+	}
+	r = runAPI(t, api.URL, "", true, "transfer", "c_1", "--to", "12")
+	if data := r.failed(t, 5, "invalidTransferRequest"); data["idempotencyKey"] == nil {
+		t.Fatalf("data = %v, want the key", data)
+	}
+}
+
+// Ctrl-C does not stop a transfer the service already received: the result
+// must say so and keep the key for a safe resend.
+func TestTransferInterruptKeepsKey(t *testing.T) {
+	t.Parallel()
+	// The server notices the client going away only after the body is read.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	r := runCtx(t, ctx, func(a *app.App) { a.APIURL = srv.URL + "/v1" }, "", true,
+		"transfer", "c_1", "--to", "+821099998888", "--idempotency-key", "t-9")
+
+	data := r.failed(t, 130, "interrupted")
+	msg, _ := r.last(t)["error"].(map[string]any)["message"].(string)
+	if data["idempotencyKey"] != "t-9" || !strings.Contains(msg, "may have been requested") {
+		t.Fatalf("message %q data %v, want the possible transfer and its key", msg, data)
+	}
+}
+
+func TestTransferHumanOutput(t *testing.T) {
+	t.Parallel()
+	api := fakeapi.New(t, "key-1")
+	api.Statuses("inProgress")
+	runAPI(t, api.URL, "", true, "create", "--agent", "12", "--to", "+82")
+	r := runAPI(t, api.URL, "", false, "transfer", "c_1", "--to", "+821099998888")
+	for _, want := range []string{"c_1", "+821099998888", "tello call get c_1"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("human output missing %q:\n%s", want, r.stdout)
+		}
+	}
+}
+
+// Malformed ids and keys are refused before any request. The fake API knows
+// no calls, so a request that went out would end in callNotFound (exit 5) or
+// a create instead.
+func TestCallIDAndKeyUsageErrors(t *testing.T) {
+	t.Parallel()
+	cases := map[string][]string{
+		"no call id":          {"transfer", "--to", "+82"},
+		"two ids":             {"transfer", "c_1", "c_2", "--to", "+82"},
+		"no --to":             {"transfer", "c_1"},
+		"key with comma":      {"transfer", "c_1", "--to", "+82", "--idempotency-key", "a,b"},
+		"empty key":           {"transfer", "c_1", "--to", "+82", "--idempotency-key", ""},
+		"key with control":    {"transfer", "c_1", "--to", "+82", "--idempotency-key", "a\x01b"},
+		"leading zero":        {"transfer", "c_01", "--to", "+82"},
+		"get without prefix":  {"get", "12"},
+		"get letters":         {"get", "c_abc"},
+		"get zero":            {"get", "c_0"},
+		"end out of range":    {"end", "c_9223372036854775808"},
+		"end empty digits":    {"end", "c_"},
+		"transfer whitespace": {"transfer", " c_1", "--to", "+82"},
+		// The API refuses these keys, or Go cannot send them at all.
+		"create key comma":   {"create", "--to", "+82", "--agent", "1", "--idempotency-key", "a,b"},
+		"create key newline": {"create", "--to", "+82", "--agent", "1", "--idempotency-key", "a\nb"},
+		"create key 256":     {"create", "--to", "+82", "--agent", "1", "--idempotency-key", strings.Repeat("k", 256)},
+		"create empty key":   {"create", "--to", "+82", "--agent", "1", "--idempotency-key", ""},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			api := fakeapi.New(t, "key-1")
+			r := runAPI(t, api.URL, "", true, args...)
+			r.failed(t, 2, "usage")
+			if len(api.Creates()) != 0 || len(api.Transfers()) != 0 || len(api.Ends()) != 0 {
+				t.Fatalf("request sent for invalid input")
+			}
+		})
+	}
+}
+
+// Ids at the edge of the API's range, and keys the API accepts, still reach
+// the service.
+func TestCallIDAndKeyBoundsReachService(t *testing.T) {
+	t.Parallel()
+	api := fakeapi.New(t, "key-1")
+	for _, id := range []string{"c_1", "c_9223372036854775807"} {
+		runAPI(t, api.URL, "", true, "get", id).failed(t, 5, "callNotFound")
+	}
+	r := runAPI(t, api.URL, "", true, "create", "--to", "+82", "--agent", "1", "--idempotency-key", "예약 2026-10-29 #1")
+	if r.exit != 0 || api.Creates()[0].IdempotencyKey != "예약 2026-10-29 #1" {
+		t.Fatalf("exit %d creates %+v", r.exit, api.Creates())
 	}
 }
 

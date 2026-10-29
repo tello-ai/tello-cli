@@ -1,6 +1,7 @@
 // Package fakeapi is a scripted stand-in for the Tello public REST API (/v1)
 // used by tests. Calls advance through a scripted status sequence, one step
-// per GET; ending a live call makes it cancelled.
+// per GET; ending a live call makes it cancelled. Transfers are recorded and
+// leave the call as it is, like the real API while the transfer runs.
 package fakeapi
 
 import (
@@ -28,6 +29,13 @@ type Create struct {
 	IdempotencyKey string
 }
 
+// Transfer is one recorded POST /v1/calls/{id}/transfer.
+type Transfer struct {
+	CallID         string
+	Body           map[string]any
+	IdempotencyKey string
+}
+
 type call struct {
 	id       string
 	statuses []string // remaining scripted statuses; the last one repeats
@@ -45,8 +53,10 @@ type Server struct {
 	statuses       []string
 	createFailures []Failure
 	getFailures    []Failure
+	transferFails  []Failure
 	creates        []Create
 	ends           []string
+	transfers      []Transfer
 	listQueries    []url.Values
 	listPage       map[string]any
 	calls          map[string]*call
@@ -100,6 +110,13 @@ func (s *Server) FailGets(f ...Failure) {
 	s.getFailures = append(s.getFailures, f...)
 }
 
+// FailTransfers makes the next transfers fail, in order.
+func (s *Server) FailTransfers(f ...Failure) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.transferFails = append(s.transferFails, f...)
+}
+
 // ListPage sets the GET /calls response.
 func (s *Server) ListPage(page map[string]any) {
 	s.mu.Lock()
@@ -119,6 +136,13 @@ func (s *Server) Ends() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.ends...)
+}
+
+// Transfers returns the recorded transfer requests, refused ones included.
+func (s *Server) Transfers() []Transfer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Transfer(nil), s.transfers...)
 }
 
 // ListQueries returns the recorded GET /calls queries.
@@ -176,6 +200,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			c.ended, c.statuses = true, []string{"cancelled"}
 			writeJSON(w, 202, obj)
 		}
+	case r.Method == http.MethodPost && strings.HasPrefix(path, "/calls/") && strings.HasSuffix(path, "/transfer"):
+		s.transfer(w, r, strings.TrimSuffix(strings.TrimPrefix(path, "/calls/"), "/transfer"))
 	default:
 		writeFailure(w, Failure{Status: 404, Code: "route_not_found"})
 	}
@@ -204,6 +230,30 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		s.byKey[key] = c.id
 	}
 	writeJSON(w, 201, s.object(c))
+}
+
+func (s *Server) transfer(w http.ResponseWriter, r *http.Request, id string) {
+	raw, _ := io.ReadAll(r.Body)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	key := r.Header.Get("Idempotency-Key")
+	s.transfers = append(s.transfers, Transfer{CallID: id, Body: body, IdempotencyKey: key})
+	c := s.calls[id]
+	switch {
+	case len(s.transferFails) > 0:
+		writeFailure(w, s.transferFails[0])
+		s.transferFails = s.transferFails[1:]
+	case key == "":
+		writeFailure(w, Failure{Status: 400, Code: "idempotency_key_required"})
+	case c == nil:
+		writeFailure(w, Failure{Status: 404, Code: "call_not_found"})
+	case terminal(c.statuses[0]):
+		writeFailure(w, Failure{Status: 409, Code: "call_not_active"})
+	case c.statuses[0] != "inProgress":
+		writeFailure(w, Failure{Status: 409, Code: "call_not_in_progress"})
+	default:
+		writeJSON(w, 202, s.object(c))
+	}
 }
 
 func (s *Server) object(c *call) map[string]any {

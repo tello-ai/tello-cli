@@ -11,7 +11,7 @@ protocol `1.0`). One binary does both.
 > Repository: `tello-cli` · npm: `@tello-ai/cli` · binary: `tello`
 >
 > Agent configuration lives in the Tello portal; the CLI picks an agent or
-> crew by id and places, follows, lists and ends calls.
+> crew by id and places, follows, lists, ends and transfers calls.
 
 ## 1. Install
 
@@ -74,7 +74,8 @@ call status before retrying. `--var name=value` fills the agent's start
 variables; a crew that needs more fails with `missingVariables` and the names.
 
 Every create carries an idempotency key (random unless `--idempotency-key`
-is given). A failed create reports it in `data.idempotencyKey`. Reuse that key
+is given; a given key must be 1 to 255 bytes without commas or control
+characters). A failed create reports it in `data.idempotencyKey`. Reuse that key
 for the same request, but check the call list when the outcome is unknown:
 responses are retained for 24 hours and a response-storage failure can allow
 the same key to place another call after five minutes.
@@ -83,7 +84,19 @@ the same key to place another call after five minutes.
 tello call get c_12345              # status, timing, summary, transcript, credit
 tello call list --status completed --agent 12 --created-after 2026-10-20
 tello call end c_12345              # ask the service to end a live call
+tello call transfer c_12345 --to +821012345678   # hand an answered call over to a number
 ```
+
+`transfer` only requests the transfer: the call stays `inProgress` while the
+number is dialed and also when the transfer fails. Once it succeeds the AI
+leaves and a phone call ends (a web call can stay `inProgress` until that
+conversation ends). Check it with `tello call get`. A request sent while
+another transfer is still running, while the call is ending, or after a
+counselor took the call over is accepted but has no effect, so give the
+previous transfer time before trying again. Each run uses a new idempotency
+key unless `--idempotency-key` is given; reuse a key only to resend a request
+whose response was lost. A call that is not `inProgress` yet (still dialing,
+or being handed to a counselor) is `callNotInProgress` (exit 75).
 
 Calls are real and billed. The callee must be a verified number of your
 account (`calleeNotVerified` otherwise).
@@ -173,13 +186,13 @@ second Ctrl-C and a Ctrl-C at the `auth login` prompt end without a
 | --- | --- | --- |
 | 0 | — | Success |
 | 1 | `internal` | Unexpected error |
-| 2 | `usage` | Bad flags or arguments, or a URL with the wrong scheme (`invalidUrl`) |
+| 2 | `usage` | Bad flags or arguments (including a malformed call id or idempotency key), or a URL with the wrong scheme (`invalidUrl`) |
 | 3 | `auth` | Missing or rejected API key |
 | 4 | `refused` | Account policy refusal: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `callerNumberUnavailable`, … |
-| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `callRejected`, … |
+| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, … |
 | 6 | `callEnded` | The call did not complete: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | Could not connect, or the connection dropped (also during authentication) |
-| 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `internalError`, `callSetupFailed`, … |
+| 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `transferOutcomeUnknown` (the transfer may have been requested), `internalError`, `callSetupFailed`, … |
 | 9 | `handler` | The handler failed to start or exited mid-call |
 | 75 | `temporary` | Retry later: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `callProviderUnavailable`, … |
 | 130 | `interrupted` | Ctrl-C or SIGTERM |
