@@ -1,5 +1,5 @@
 // Package guide embeds the coding-agent operating guide and the skill file
-// that `tello init` installs (docs/design.md section 11).
+// that `tello init` installs (docs/design.md section 13).
 package guide
 
 import (

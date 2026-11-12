@@ -1,5 +1,5 @@
 // Package initcmd implements `tello init`, which installs the coding-agent
-// skill files (docs/design.md section 11).
+// skill files (docs/design.md section 13).
 package initcmd
 
 import (

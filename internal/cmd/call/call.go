@@ -1,5 +1,5 @@
 // Package call implements `tello call create | get | list | end | transfer |
-// batch | draft` (docs/design.md sections 8 to 10).
+// batch | draft` (docs/design.md sections 8 to 11).
 package call
 
 import (

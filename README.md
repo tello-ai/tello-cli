@@ -4,14 +4,16 @@
 
 `tello` places Tello phone calls from a terminal or a coding agent (Claude Code,
 Codex), follows them, and reads their results. A call is answered either by an
-agent or crew configured in the Tello portal (REST API), or turn by turn by you
-or a program (WebSocket gateway, via the [Tello Go SDK](https://github.com/tello-ai/tello-go),
-protocol `1.0`). One binary does both.
+agent or crew of the account (REST API), or turn by turn by you or a program
+(WebSocket gateway, via the [Tello Go SDK](https://github.com/tello-ai/tello-go),
+protocol `1.0`). One binary does both. It also manages the account's tools,
+agents and crews through the REST API.
 
 > Repository: `tello-cli` · npm: `@tello-ai/cli` · binary: `tello`
 >
-> Agent configuration lives in the Tello portal; the CLI picks an agent or
-> crew by id and places, follows, lists, ends and transfers calls.
+> The CLI picks an agent or crew by id and places, follows, lists, ends and
+> transfers calls. `tello tool|agent|crew` create, change and delete them;
+> writes go live for the next call at once.
 
 ## 1. Install
 
@@ -73,6 +75,12 @@ cannot be confirmed, the call may still be active. Check the call list or
 call status before retrying. `--var name=value` fills the agent's start
 variables; a crew that needs more fails with `missingVariables` and the names.
 
+Per-call settings change one call, not the agent: `--max-duration-seconds`
+(30–1800, agents and crews), and for `--agent` only `--instructions` (the
+goal of this call), `--ivr-goal`, `--ivr-opening-message` and
+`--notify-on-end`. The service may refuse instructions before dialing
+(`callRefused`, or `instructionsUnclear` with `data.question`).
+
 Every create carries an idempotency key (random unless `--idempotency-key`
 is given; a given key must be 1 to 255 bytes without commas or control
 characters). A failed create reports it in `data.idempotencyKey`. Reuse that key
@@ -85,6 +93,8 @@ tello call get c_12345              # status, timing, summary, transcript, credi
 tello call list --status completed --agent 12 --created-after 2026-10-20
 tello call end c_12345              # ask the service to end a live call
 tello call transfer c_12345 --to +821012345678   # hand an answered call over to a number
+tello call transfer c_12345 --agent-app           # or to the agent's agent app counselors
+tello call transfer c_12345 --to +821012345678 --mode warm --plan '{"mode":"warm-transfer-say-summary"}'
 ```
 
 `transfer` only requests the transfer: the call stays `inProgress` while the
@@ -97,6 +107,28 @@ previous transfer time before trying again. Each run uses a new idempotency
 key unless `--idempotency-key` is given; reuse a key only to resend a request
 whose response was lost. A call that is not `inProgress` yet (still dialing,
 or being handed to a counselor) is `callNotInProgress` (exit 75).
+
+`--mode warm` (phone numbers only) briefs the person who answers first and
+needs `--plan`, the REST API's `transferPlan` object (a JSON object, `@file`
+or `-`); `--message` is what the customer hears before the transfer. Without
+these flags the request body is the same as in earlier versions.
+
+### Review the scenario first (call drafts)
+
+For agents that generate outbound scenarios:
+
+```sh
+tello call draft create --agent 12 --to +821012345678 --instructions "내일 2시 예약을 확인해 주세요"
+tello call draft revise cd_481 --request "4시도 안 되면 6시로 물어봐 주세요"   # returns a new draft id
+tello call draft confirm cd_482     # places the real call
+```
+
+`create` returns the draft: show `preview.summary` before confirming. A
+`needsClarification` draft has a `question` to answer; `confirmed` means the
+agent had a ready scenario and the call was already placed (`callId`).
+`confirm` dials a real, billed call once; drafts expire after 10 minutes.
+Agents without scenario generation answer `draftNotApplicable`: use
+`call create`.
 
 Calls are real and billed. The callee must be a verified number of your
 account (`calleeNotVerified` otherwise).
@@ -165,12 +197,39 @@ succeed later are retried (`--max-retries 3`, `--retry-delay 5s`, doubling;
 the same idempotency key per task). Account-wide refusals such as
 `insufficientCredit`, and a target that cannot be called, stop the batch.
 
-## 6. JSON output and exit codes
+## 6. Manage tools, agents and crews
+
+```sh
+tello tool list --limit 50                         # one page; pass nextCursor as --cursor
+tello agent get 12                                 # full settings (agent list shows what calls can use)
+tello tool create --body @tool.json                # JSON object, @file, or - for stdin
+tello agent update 12 --body '{"toolIds":["41","7"]}'   # only the fields sent change
+tello crew delete 34
+tello crew generate --goal "치과 예약 고객에게 전화해 내일 예약을 확인한다" --wait
+tello crew generation 57
+```
+
+Writes save, deploy and publish in one request: the next call uses them, and
+there is no draft to throw away. Field names follow the REST API docs; lists
+such as `toolIds` and objects such as a crew's `graph` are replaced whole.
+`create` carries an idempotency key like call creation. `writeOutcomeUnknown`
+(exit 8) or a lost response means the change may be live: check with `get` or
+`list` before sending it again. Refusals carry `data.reason` and a Korean
+`data.detail`.
+
+`crew generate` builds a crew from a goal as a job. Without `--wait` it
+returns the job; with `--wait` it prints each status and returns the job with
+its `crew`. A failed job exits 8 with its `error.code` (for example
+`crewDeployFailed`); `--timeout` and Ctrl-C stop waiting, not the job. One
+job runs per account (`crewGenerationInProgress`), and the same goal returns
+the running or just finished job instead of building a second crew.
+
+## 7. JSON output and exit codes
 
 With `--json`, stdout carries one JSON object per line. `call create --wait`
-streams `cli.status` lines; handler and `-i` calls stream the gateway frames
-verbatim; `call batch` adds `cli.task` and `cli.retry`. **Every command ends
-with exactly one `cli.result` line:**
+and `crew generate --wait` stream `cli.status` lines; handler and `-i` calls
+stream the gateway frames verbatim; `call batch` adds `cli.task` and
+`cli.retry`. **Every command ends with exactly one `cli.result` line:**
 
 ```json
 {"type":"cli.result","ok":true,"data":{"id":"c_12345","status":"completed","summary":"…"}}
@@ -186,18 +245,18 @@ second Ctrl-C and a Ctrl-C at the `auth login` prompt end without a
 | --- | --- | --- |
 | 0 | — | Success |
 | 1 | `internal` | Unexpected error |
-| 2 | `usage` | Bad flags or arguments (including a malformed call id or idempotency key), or a URL with the wrong scheme (`invalidUrl`) |
-| 3 | `auth` | Missing or rejected API key |
+| 2 | `usage` | Bad flags or arguments (including a malformed id, `--body` or idempotency key), or a URL with the wrong scheme (`invalidUrl`) |
+| 3 | `auth` | Missing or rejected API key, or a key without the scope or allowed IP (`insufficientScope`, `ipNotAllowed`) |
 | 4 | `refused` | Account policy refusal: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `callerNumberUnavailable`, … |
-| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, … |
+| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
 | 6 | `callEnded` | The call did not complete: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | Could not connect, or the connection dropped (also during authentication) |
-| 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `transferOutcomeUnknown` (the transfer may have been requested), `internalError`, `callSetupFailed`, … |
+| 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `transferOutcomeUnknown` (the transfer may have been requested), `writeOutcomeUnknown` (the write may be live), a failed crew generation, `internalError`, … |
 | 9 | `handler` | The handler failed to start or exited mid-call |
-| 75 | `temporary` | Retry later: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `callProviderUnavailable`, … |
+| 75 | `temporary` | Retry later: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `upstreamUnavailable`, `crewGenerationInProgress`, … |
 | 130 | `interrupted` | Ctrl-C or SIGTERM |
 
-## 7. Coding agents
+## 8. Coding agents
 
 ```sh
 tello init                          # writes .claude/skills/tello/SKILL.md and .codex/skills/tello/SKILL.md
@@ -210,7 +269,7 @@ the CLI: `tello init` rewrites them when they differ from the current template,
 and `tello doctor` reports stale ones. Agents without skill support can put
 `tello guide coding-agent --brief` in their instructions.
 
-## 8. Development
+## 9. Development
 
 ```sh
 go test -race ./...

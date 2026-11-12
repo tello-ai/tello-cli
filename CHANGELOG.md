@@ -1,6 +1,36 @@
 # Changelog
 
 ## Unreleased
+- Added `tello tool list|get|create|update|delete` and
+  `get|create|update|delete` for `tello agent` and `tello crew` (`list`
+  unchanged). `--body` takes a JSON object, `@file` or `-` for stdin; ids and
+  bodies are checked before any request. Writes go live for the next call at
+  once. Creates send an idempotency key (random unless `--idempotency-key`,
+  reported in `data.idempotencyKey` on failure); a lost response, Ctrl-C or
+  an undocumented 5xx on a write is `writeOutcomeUnknown` (exit 8), and
+  `delete` accepts the API's empty `204`.
+- Added `crew generate --goal <text> [--wait]` and `crew generation <id>`.
+  `--wait` streams `cli.status` lines with `generationId`; a failed job exits
+  8 with its `error.code` (`crewGenerationFailed`, `crewDeployFailed`, …);
+  `--timeout` stops waiting with `crewGenerationRunning` (exit 75), and
+  `crewGenerationInProgress` (another goal running, `data.id`) is exit 75.
+- Added `call draft create|revise|confirm` for agents that generate outbound
+  scenarios. Confirm places a real, billed call and returns the call; draft
+  ids are validated like call ids (`cd_` and a positive integer).
+- `call create` with `--agent`/`--crew` sends per-call settings:
+  `--max-duration-seconds`, and for agents only `--instructions`, `--ivr-goal`,
+  `--ivr-opening-message`, `--notify-on-end`. Agent-only settings with
+  `--crew`, durations outside 30–1800 and any of them on WebSocket calls are
+  usage errors.
+- `call transfer` adds `--mode cold|warm`, `--agent-app`, `--plan`
+  (`transferPlan`) and `--message`. `call transfer <id> --to <number>` sends
+  the same request body as before.
+- New REST error codes are classified: `insufficientScope` and `ipNotAllowed`
+  are auth errors (exit 3, previously 5); `upstreamUnavailable`,
+  `toolConflict` and `crewGenerationInProgress` are temporary (exit 75);
+  `writeOutcomeUnknown` is server (exit 8); tool, agent, crew, draft,
+  per-call and transfer-mode refusals are invalid (exit 5). Human error
+  output labels only `c_` ids as call IDs.
 - REST call safety: handle closed stdout, preserve unknown outcomes and
   idempotency keys on output failures, and stop retries when output fails.
   REST endpoints require HTTPS except on loopback; authentication and call
