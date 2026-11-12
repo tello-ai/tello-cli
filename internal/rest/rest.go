@@ -68,12 +68,30 @@ func NewWithKey(a *app.App, key string) (*Client, error) {
 }
 
 // CreateCall is the POST /calls body. Exactly one of AgentID and CrewID is
-// set; the server rejects anything else with targetRequired.
+// set; the server rejects anything else with targetRequired. The embedded
+// per-call settings apply to this call only; crews take MaxDurationSeconds
+// alone (anything else is unsupportedForCrew).
 type CreateCall struct {
 	AgentID   string         `json:"agentId,omitempty"`
 	CrewID    string         `json:"crewId,omitempty"`
 	To        string         `json:"to"`
 	Variables map[string]any `json:"variables,omitempty"`
+	PerCall
+}
+
+// PerCall are the per-call settings of POST /calls and POST /call-drafts.
+// Zero values are not sent.
+type PerCall struct {
+	MaxDurationSeconds int    `json:"maxDurationSeconds,omitempty"`
+	Instructions       string `json:"instructions,omitempty"`
+	IVR                *IVR   `json:"ivr,omitempty"`
+	NotifyOnEnd        bool   `json:"notifyOnEnd,omitempty"`
+}
+
+// IVR guides the agent when an automated phone menu answers.
+type IVR struct {
+	Goal           string `json:"goal,omitempty"`
+	OpeningMessage string `json:"openingMessage,omitempty"`
 }
 
 // ListCalls is the GET /calls query; zero values are omitted.
@@ -425,6 +443,11 @@ var kinds = map[string]app.Kind{
 	"crewInUse":              app.KindInvalid,
 	"crewNotPublishable":     app.KindInvalid,
 	"crewGenerationNotFound": app.KindInvalid,
+	// Per-call settings, checked before dialing.
+	"unsupportedForCrew":  app.KindInvalid,
+	"notifyUnavailable":   app.KindInvalid,
+	"callRefused":         app.KindInvalid,
+	"instructionsUnclear": app.KindInvalid,
 
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,

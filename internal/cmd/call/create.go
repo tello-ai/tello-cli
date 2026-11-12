@@ -22,6 +22,7 @@ func newCreate(a *app.App) *cobra.Command {
 		wait           bool
 		idempotencyKey string
 		tgt            target
+		pc             perCall
 	)
 	cmd := &cobra.Command{
 		Use:   "create --to <number> (--agent <id> | --crew <id> | -i | -- <handler command>...) [flags]",
@@ -32,12 +33,16 @@ func newCreate(a *app.App) *cobra.Command {
                    returns once the call is accepted; --wait follows it to the
                    end. --var passes start variables. Reuse the same
                    --idempotency-key on retries; check unknown outcomes first.
+                   --max-duration-seconds applies to both; --instructions,
+                   --ivr-goal, --ivr-opening-message and --notify-on-end to
+                   --agent only. They change this call, not the agent.
 -i                 You answer from the terminal (WebSocket gateway). Blocks
                    until the call ends.
 -- <command>...    A handler program answers: it reads gateway frames as NDJSON
                    on stdin and prints answer, sendDtmf or cancel commands on
                    stdout. Blocks until the call ends.`,
 		Example: `  tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
+  tello call create --to +821012345678 --agent 12 --instructions "내일 2시 예약을 확인해 주세요" --notify-on-end
   tello call create --to +821012345678 --prompt "Confirm the booking" -i
   tello call create --to +821012345678 --metadata @meta.json -- python3 bot.py`,
 		Args: cobra.ArbitraryArgs,
@@ -69,11 +74,17 @@ func newCreate(a *app.App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return createREST(cmd, a, tgt, tgt.request(to, variables), idempotencyKey, wait, timeout)
+				settings, err := pc.settings(tgt.crew != "")
+				if err != nil {
+					return err
+				}
+				req := tgt.request(to, variables)
+				req.PerCall = settings
+				return createREST(cmd, a, tgt, req, idempotencyKey, wait, timeout)
 			}
 
-			if len(vars) > 0 || wait || idempotencyKey != "" {
-				return app.Usagef("--var, --wait and --idempotency-key need --agent or --crew")
+			if len(vars) > 0 || wait || idempotencyKey != "" || pc.set() {
+				return app.Usagef("--var, --wait, --idempotency-key and the per-call settings (--instructions, --max-duration-seconds, --ivr-goal, --ivr-opening-message, --notify-on-end) need --agent or --crew")
 			}
 			argv, err := handlerArgv(cmd, args, interactive)
 			if err != nil {
@@ -97,6 +108,7 @@ func newCreate(a *app.App) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&to, "to", "", "phone number to call (E.164, e.g. +821012345678)")
 	tgt.bind(f)
+	pc.bind(f)
 	f.StringArrayVar(&vars, "var", nil, "start variable name=value for --agent/--crew (repeatable)")
 	f.BoolVar(&wait, "wait", false, "with --agent/--crew: follow the call until it ends")
 	f.StringVar(&idempotencyKey, "idempotency-key", "", "with --agent/--crew: key that makes retries safe (default: random)")

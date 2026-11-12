@@ -53,6 +53,41 @@ func (t *target) request(to string, vars map[string]any) rest.CreateCall {
 	return rest.CreateCall{AgentID: t.agent, CrewID: t.crew, To: to, Variables: vars}
 }
 
+// perCall are the per-call settings flags of REST calls and call drafts.
+type perCall struct {
+	rest.PerCall
+	ivrGoal, openingMessage string
+}
+
+func (p *perCall) bind(f *pflag.FlagSet) {
+	f.StringVar(&p.Instructions, "instructions", "", "--agent only: goal of this call, up to 2000 characters")
+	f.IntVar(&p.MaxDurationSeconds, "max-duration-seconds", 0, "maximum call length in seconds, 30 to 1800 (default: the service's)")
+	f.StringVar(&p.ivrGoal, "ivr-goal", "", "--agent only: where to go when a phone menu answers, e.g. 상담원 연결 (up to 200 characters)")
+	f.StringVar(&p.openingMessage, "ivr-opening-message", "", "--agent only: first sentence once the callee answers (up to 200 characters)")
+	f.BoolVar(&p.NotifyOnEnd, "notify-on-end", false, "--agent only: text the account's notification number when the call ends")
+}
+
+// set reports whether any setting is given.
+func (p *perCall) set() bool {
+	return p.Instructions != "" || p.MaxDurationSeconds != 0 || p.ivrGoal != "" || p.openingMessage != "" || p.NotifyOnEnd
+}
+
+// settings validates the flags the API documents limits for and returns
+// the settings. Crews take only --max-duration-seconds.
+func (p *perCall) settings(crew bool) (rest.PerCall, error) {
+	if p.MaxDurationSeconds != 0 && (p.MaxDurationSeconds < 30 || p.MaxDurationSeconds > 1800) {
+		return rest.PerCall{}, app.Usagef("--max-duration-seconds must be 30 to 1800")
+	}
+	if crew && (p.Instructions != "" || p.ivrGoal != "" || p.openingMessage != "" || p.NotifyOnEnd) {
+		return rest.PerCall{}, app.Usagef("--instructions, --ivr-goal, --ivr-opening-message and --notify-on-end are for --agent calls; crews keep them per member, pass per-call values with --var")
+	}
+	s := p.PerCall
+	if p.ivrGoal != "" || p.openingMessage != "" {
+		s.IVR = &rest.IVR{Goal: p.ivrGoal, OpeningMessage: p.openingMessage}
+	}
+	return s, nil
+}
+
 // parseVars turns repeated --var name=value into the variables object.
 func parseVars(args []string) (map[string]any, error) {
 	if len(args) == 0 {

@@ -185,4 +185,7 @@ var hints = map[string]string{
 	"toolConflict":             "The tool was changed at the same time. Get it again, then resend.",
 	"crewGenerationInProgress": "Another goal is being built (data.id). Wait for it with `tello crew generation <id>`, then retry.",
 	"crewGenerationRunning":    "The job keeps running. Check it with `tello crew generation <id>`; the same goal returns the same job.",
+	"callRefused":              "The instructions were judged not to be something the AI can do (data.detectedIntent). Change the request.",
+	"instructionsUnclear":      "Answer data.question in --instructions and retry with the same --idempotency-key.",
+	"notifyUnavailable":        "Turn on the agent's call-end notification and register a notification number (data.reason), or drop --notify-on-end.",
 }
