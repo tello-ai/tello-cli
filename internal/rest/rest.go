@@ -68,12 +68,30 @@ func NewWithKey(a *app.App, key string) (*Client, error) {
 }
 
 // CreateCall is the POST /calls body. Exactly one of AgentID and CrewID is
-// set; the server rejects anything else with targetRequired.
+// set; the server rejects anything else with targetRequired. The embedded
+// per-call settings apply to this call only; crews take MaxDurationSeconds
+// alone (anything else is unsupportedForCrew).
 type CreateCall struct {
 	AgentID   string         `json:"agentId,omitempty"`
 	CrewID    string         `json:"crewId,omitempty"`
 	To        string         `json:"to"`
 	Variables map[string]any `json:"variables,omitempty"`
+	PerCall
+}
+
+// PerCall are the per-call settings of POST /calls and POST /call-drafts.
+// Zero values are not sent.
+type PerCall struct {
+	MaxDurationSeconds int    `json:"maxDurationSeconds,omitempty"`
+	Instructions       string `json:"instructions,omitempty"`
+	IVR                *IVR   `json:"ivr,omitempty"`
+	NotifyOnEnd        bool   `json:"notifyOnEnd,omitempty"`
+}
+
+// IVR guides the agent when an automated phone menu answers.
+type IVR struct {
+	Goal           string `json:"goal,omitempty"`
+	OpeningMessage string `json:"openingMessage,omitempty"`
 }
 
 // ListCalls is the GET /calls query; zero values are omitted.
@@ -135,26 +153,33 @@ func (c *Client) EndCall(ctx context.Context, callID string) (Object, error) {
 	return validateCall(call, callID)
 }
 
-// transferCall is the POST /calls/{id}/transfer body. The API supports only
-// an immediate (cold) transfer to a phone number.
-type transferCall struct {
-	Mode        string              `json:"mode"`
-	Destination transferDestination `json:"destination"`
+// Transfer is the POST /calls/{id}/transfer body. Mode is "cold" (connect
+// at once) or "warm" (brief the person who answers first, phone only, with
+// TransferPlan required). Message is said to the customer before the
+// transfer. Unset optional fields are omitted, so a cold phone transfer is
+// the same request as before warm transfers existed.
+type Transfer struct {
+	Mode         string              `json:"mode"`
+	Destination  TransferDestination `json:"destination"`
+	Message      string              `json:"message,omitempty"`
+	TransferPlan map[string]any      `json:"transferPlan,omitempty"`
 }
 
-type transferDestination struct {
+// TransferDestination is a phone number (Type "phone", Target the number)
+// or the agent app counselors of the call's agent (Type "agentApp").
+type TransferDestination struct {
 	Type   string `json:"type"`
-	Target string `json:"target"`
+	Target string `json:"target,omitempty"`
 }
 
-// TransferCall asks the service to hand a live call over to the phone number
-// to. idempotencyKey is required by the API; resending an accepted request
+// TransferCall asks the service to hand a live call over as body says.
+// idempotencyKey is required by the API; resending an accepted request
 // with the same key replays the stored 202 instead of transferring again.
 // Refused requests are not stored, so the same key runs them again. The
 // returned call is the state when the request was accepted; the call stays
-// inProgress while the transfer runs.
-func (c *Client) TransferCall(ctx context.Context, callID, to, idempotencyKey string) (Object, error) {
-	body := transferCall{Mode: "cold", Destination: transferDestination{Type: "phone", Target: to}}
+// inProgress while a phone transfer runs (transferring while agent app
+// counselors are called).
+func (c *Client) TransferCall(ctx context.Context, callID string, body Transfer, idempotencyKey string) (Object, error) {
 	call, err := c.do(ctx, opTransfer, http.MethodPost, "/calls/"+url.PathEscape(callID)+"/transfer", nil, body, idempotencyKey)
 	if err != nil {
 		return nil, err
@@ -189,23 +214,45 @@ func (c *Client) ListCrews(ctx context.Context) (Object, error) {
 type operation int
 
 const (
-	opRead     operation = iota // get, list, crews: no side effects
-	opAgents                    // agent list, also the key check: exactly 200
-	opCreate                    // places a call
-	opEnd                       // asks to end a call: exactly 202
-	opTransfer                  // asks to transfer a call: exactly 202
+	opRead        operation = iota // get, list, crews: no side effects
+	opAgents                       // agent list, also the key check: exactly 200
+	opCreate                       // places a call, or may (call drafts)
+	opEnd                          // asks to end a call: exactly 202
+	opTransfer                     // asks to transfer a call: exactly 202
+	opWriteCreate                  // creates a tool, agent or crew: exactly 201
+	opWriteUpdate                  // changes a tool, agent or crew: exactly 200
+	opWriteDelete                  // deletes a tool, agent or crew: exactly 204, no body
+	opGenerate                     // starts a crew generation: 202, or 200 for the job of the same goal
+	opDraftRevise                  // revises a call draft: exactly 200
 )
 
-// wantStatus is the only success status accepted, or 0 for any 2xx.
-func (op operation) wantStatus() int {
+// accepts reports whether status is a success status the API documents
+// for op.
+func (op operation) accepts(status int) bool {
 	switch op {
-	case opAgents:
-		return http.StatusOK
+	case opAgents, opWriteUpdate, opDraftRevise:
+		return status == http.StatusOK
 	case opEnd, opTransfer:
-		return http.StatusAccepted
+		return status == http.StatusAccepted
+	case opWriteCreate:
+		return status == http.StatusCreated
+	case opWriteDelete:
+		return status == http.StatusNoContent
+	case opGenerate:
+		return status == http.StatusAccepted || status == http.StatusOK
 	}
-	return 0
+	return status >= 200 && status <= 299
 }
+
+// write reports a tool, agent or crew write: it goes live at once and its
+// outcome is unknown when the response is lost.
+func (op operation) write() bool {
+	return op == opWriteCreate || op == opWriteUpdate || op == opWriteDelete || op == opGenerate
+}
+
+// long reports requests the service may take long to finish: placing a call,
+// generating a call scenario and writes that deploy what they save.
+func (op operation) long() bool { return op == opCreate || op == opDraftRevise || op.write() }
 
 func (c *Client) do(ctx context.Context, op operation, method, path string, query url.Values, body any, idempotencyKey string) (Object, error) {
 	target := c.base + path
@@ -235,7 +282,7 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 	}
 
 	httpClient := c.http
-	if op == opCreate {
+	if op.long() {
 		httpClient = c.createHTTP
 	}
 	resp, err := httpClient.Do(req)
@@ -243,11 +290,13 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		switch op {
-		case opCreate:
+		switch {
+		case op == opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionFailed", "create request failed; call outcome may be unknown, check the call list before retrying")
-		case opTransfer:
+		case op == opTransfer:
 			return nil, app.NewError(app.KindConnection, "connectionFailed", "transfer request failed; the transfer may have been requested, check the call before retrying with the same idempotency key")
+		case op.write():
+			return nil, app.NewError(app.KindConnection, "connectionFailed", fmt.Sprintf("%s request failed; the change may have been applied, check it with get or list before retrying (a create with the same idempotency key)", method))
 		}
 		return nil, app.NewError(app.KindConnection, "connectionFailed", fmt.Sprintf("%s request failed", method))
 	}
@@ -257,11 +306,13 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		switch op {
-		case opCreate:
+		switch {
+		case op == opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionClosed", "create response could not be read; call outcome may be unknown, check the call list before retrying")
-		case opTransfer:
+		case op == opTransfer:
 			return nil, app.NewError(app.KindConnection, "connectionClosed", "transfer response could not be read; the transfer may have been requested, check the call before retrying with the same idempotency key")
+		case op.write():
+			return nil, app.NewError(app.KindConnection, "connectionClosed", fmt.Sprintf("%s response could not be read; the change may have been applied, check it with get or list before retrying (a create with the same idempotency key)", method))
 		}
 		return nil, app.NewError(app.KindConnection, "connectionClosed", "could not read response")
 	}
@@ -275,12 +326,19 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 				// Not a documented transfer error (e.g. a proxy page): the
 				// service may have taken the request before it failed.
 				return nil, app.NewError(app.KindServer, "transferOutcomeUnknown", fmt.Sprintf("transfer outcome is unknown (%s); the transfer may have been requested, check the call before retrying with the same idempotency key", apiErr.Message))
+			case op.write() && resp.StatusCode >= 500:
+				// Not a documented error (e.g. a proxy page): the write may
+				// have been applied before it failed.
+				return nil, app.NewError(app.KindServer, "writeOutcomeUnknown", fmt.Sprintf("write outcome is unknown (%s); check it with get or list before retrying (a create with the same idempotency key)", apiErr.Message))
 			}
 		}
 		return nil, apiErr
 	}
-	if want := op.wantStatus(); want != 0 && resp.StatusCode != want {
+	if !op.accepts(resp.StatusCode) {
 		return nil, app.NewError(app.KindServer, "invalidResponse", "unexpected API response status")
+	}
+	if op == opWriteDelete {
+		return Object{}, nil
 	}
 	var obj Object
 	if err := decode(raw, &obj); err != nil || obj == nil {
@@ -341,6 +399,9 @@ func Terminal(status string) bool {
 // listed fall back to the HTTP status in statusKind.
 var kinds = map[string]app.Kind{
 	"unauthenticated": app.KindAuth,
+	// The key is valid but may not be used here: fix its IP list or scopes.
+	"ipNotAllowed":      app.KindAuth,
+	"insufficientScope": app.KindAuth,
 
 	// Account policy: fixing it takes a human, retrying does not help.
 	"insufficientCredit":      app.KindRefused,
@@ -363,9 +424,56 @@ var kinds = map[string]app.Kind{
 	// handed to a portal counselor): the same request can succeed later.
 	"callNotInProgress": app.KindTemporary,
 
+	// Tool, agent and crew management. upstreamUnavailable means the request
+	// was not processed; toolConflict clears once the concurrent edit is
+	// done, crewGenerationInProgress once the running job (data.id) ends.
+	"upstreamUnavailable":      app.KindTemporary,
+	"toolConflict":             app.KindTemporary,
+	"crewGenerationInProgress": app.KindTemporary,
+
+	// Validation and state refusals the caller must fix, whatever the HTTP
+	// status (invalidRequest can be 400 or 415).
+	"invalidRequest":         app.KindInvalid,
+	"invalidQuery":           app.KindInvalid,
+	"invalidCursor":          app.KindInvalid,
+	"payloadTooLarge":        app.KindInvalid,
+	"invalidTool":            app.KindInvalid,
+	"invalidAgent":           app.KindInvalid,
+	"invalidCrew":            app.KindInvalid,
+	"toolNotFound":           app.KindInvalid,
+	"defaultToolProtected":   app.KindInvalid,
+	"toolInUse":              app.KindInvalid,
+	"toolTypeManaged":        app.KindInvalid,
+	"toolNotPublishable":     app.KindInvalid,
+	"agentEngineImmutable":   app.KindInvalid,
+	"agentInUse":             app.KindInvalid,
+	"agentNotPublishable":    app.KindInvalid,
+	"crewInUse":              app.KindInvalid,
+	"crewNotPublishable":     app.KindInvalid,
+	"crewGenerationNotFound": app.KindInvalid,
+	// Per-call settings, checked before dialing.
+	"unsupportedForCrew":  app.KindInvalid,
+	"notifyUnavailable":   app.KindInvalid,
+	"callRefused":         app.KindInvalid,
+	"instructionsUnclear": app.KindInvalid,
+	// Call drafts. draftAlreadyConfirmed carries the placed call's id.
+	"draftNotApplicable":    app.KindInvalid,
+	"draftNotFound":         app.KindInvalid,
+	"draftAlreadyConfirmed": app.KindInvalid,
+	"draftSuperseded":       app.KindInvalid,
+	"draftNotConfirmable":   app.KindInvalid,
+	"draftExpired":          app.KindInvalid,
+	"draftRevisionLimit":    app.KindInvalid,
+	// Transfers the API does not support.
+	"transferModeUnsupported":        app.KindInvalid,
+	"transferDestinationUnsupported": app.KindInvalid,
+
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,
-	"internalError":      app.KindServer,
+	// A tool, agent or crew write may have been applied: check before
+	// creating again with a new key.
+	"writeOutcomeUnknown": app.KindServer,
+	"internalError":       app.KindServer,
 }
 
 func statusKind(status int) app.Kind {

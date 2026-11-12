@@ -56,6 +56,7 @@ last line is always {"type":"cli.result",...}. Exit codes are listed by
 		doctor.New(a),
 		guidecmd.New(a),
 		initcmd.New(a),
+		target.NewTool(a),
 		versioncmd.New(a),
 	)
 	return root

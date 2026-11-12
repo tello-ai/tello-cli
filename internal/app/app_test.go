@@ -139,6 +139,29 @@ func TestReportErrorHumanWritesMessageAndHintToStderr(t *testing.T) {
 	}
 }
 
+// Only call ids are shown as call IDs: tool, agent, crew, generation and
+// draft errors carry other ids in data.
+func TestReportErrorHumanShowsOnlyCallIDs(t *testing.T) {
+	for _, tt := range []struct {
+		data map[string]any
+		want string
+	}{
+		{map[string]any{"id": "c_7"}, "call ID: c_7"},
+		{map[string]any{"callId": "c_8"}, "call ID: c_8"},
+		{map[string]any{"call": map[string]any{"id": "c_9"}}, "call ID: c_9"},
+		{map[string]any{"id": "41"}, ""},
+	} {
+		a, _, stderr := newTestApp(false)
+		e := NewError(KindInvalid, "x", "x")
+		e.Data = tt.data
+		a.ReportError(e)
+		out := stderr.String()
+		if tt.want == "" && strings.Contains(out, "call ID") || tt.want != "" && !strings.Contains(out, tt.want) {
+			t.Fatalf("data %v: stderr %q, want %q", tt.data, out, tt.want)
+		}
+	}
+}
+
 func TestWriteResultAndEventsKeepUnicodeUnescaped(t *testing.T) {
 	a, stdout, _ := newTestApp(true)
 

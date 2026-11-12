@@ -3,15 +3,16 @@
 # tello-cli
 
 `tello`는 터미널이나 코딩 에이전트(Claude Code, Codex)에서 Tello 통화를 걸고,
-진행 상황과 결과를 조회하는 CLI입니다. Tello 포털에 설정한 에이전트나 크루가
-답하는 REST 방식과, 사람이나 프로그램이 각 턴에 답하는 WebSocket 방식
+진행 상황과 결과를 조회하는 CLI입니다. 계정의 에이전트나 크루가 답하는 REST
+방식과, 사람이나 프로그램이 각 턴에 답하는 WebSocket 방식
 ([Tello Go SDK](https://github.com/tello-ai/tello-go), 프로토콜 `1.0`)을
-하나의 바이너리로 제공합니다.
+하나의 바이너리로 제공합니다. 도구·에이전트·크루도 REST API로 관리합니다.
 
 > 저장소: `tello-cli` · npm: `@tello-ai/cli` · 바이너리: `tello`
 >
-> 에이전트 설정은 Tello 포털에서 합니다. CLI는 에이전트나 크루를 선택해 통화를
-> 걸고, 조회하고, 종료·전환을 요청합니다.
+> CLI는 에이전트나 크루를 선택해 통화를 걸고, 조회하고, 종료·전환을 요청합니다.
+> `tello tool|agent|crew`로 만들고 고치고 지울 수 있으며, 쓰기는 다음 통화부터
+> 바로 반영됩니다.
 
 ## 1. 설치
 
@@ -74,11 +75,19 @@ tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
 때만 성공하며 그 밖의 종료 상태는 오류입니다. 요약·전사·요금은 종료 직후에도 null일
 수 있으므로 나중에 다시 조회하세요.
 
+통화별 설정은 에이전트가 아니라 그 통화에만 적용됩니다. `--max-duration-seconds`
+(30~1800, 에이전트·크루 모두), 그리고 `--agent`에만 쓰는 `--instructions`(이번
+통화의 목표), `--ivr-goal`, `--ivr-opening-message`, `--notify-on-end`가 있습니다.
+`--instructions`는 발신 전에 AI가 검토해 거절할 수 있습니다(`callRefused`, 또는
+`data.question`이 있는 `instructionsUnclear`).
+
 ```sh
 tello call get c_12345              # 상태, 시간, 요약, 전사, 요금
 tello call list --status completed --agent 12 --created-after 2026-10-20
 tello call end c_12345              # 진행 중인 통화의 종료 요청
 tello call transfer c_12345 --to +821012345678   # 통화 중인 통화를 번호로 전환 요청
+tello call transfer c_12345 --agent-app           # 에이전트의 상담APP 상담사로 전환 요청
+tello call transfer c_12345 --to +821012345678 --mode warm --plan '{"mode":"warm-transfer-say-summary"}'
 ```
 
 `list`는 최신순으로 한 페이지를 반환합니다. 다음 페이지가 있으면 같은 필터와
@@ -92,6 +101,28 @@ tello call transfer c_12345 --to +821012345678   # 통화 중인 통화를 번�
 실행마다 새 키를 쓰며, 같은 키는 응답을 받지 못한 같은 요청을 다시 보낼 때만 쓰세요.
 아직 `inProgress`가 아닌 통화(발신 중, 상담사에게 넘기는 중)는 `callNotInProgress`(exit 75)입니다.
 이 명령들은 REST와 WebSocket으로 건 통화를 모두 조회·제어할 수 있습니다.
+
+`--mode warm`(전화번호만)은 받은 사람에게 먼저 안내한 뒤 연결하며, REST API의
+`transferPlan` 객체를 `--plan`(JSON 객체, `@파일`, `-`)으로 넘겨야 합니다.
+`--message`는 전환 직전 고객에게 들려줄 안내입니다. 이 플래그들이 없으면 요청
+본문은 이전 버전과 같습니다.
+
+### 시나리오를 먼저 확인하기(통화 초안)
+
+아웃바운드 시나리오 자동 생성을 쓰는 에이전트는 걸기 전에 시나리오를 확인할 수
+있습니다.
+
+```sh
+tello call draft create --agent 12 --to +821012345678 --instructions "내일 2시 예약을 확인해 주세요"
+tello call draft revise cd_481 --request "4시도 안 되면 6시로 물어봐 주세요"   # 새 초안 id 반환
+tello call draft confirm cd_482     # 실제 통화 발신
+```
+
+`create`는 초안을 반환합니다. 확정 전에 `preview.summary`를 사람에게 보여 주세요.
+`needsClarification`이면 `question`에 답해 다시 만들고, `confirmed`면 에이전트에
+완성된 시나리오가 있어 이미 발신한 것입니다(`callId`). `confirm`은 실제 과금
+통화를 한 번 겁니다. 초안은 10분 뒤 만료됩니다. 시나리오 자동 생성을 쓰지 않는
+에이전트는 `draftNotApplicable`이므로 `call create`를 쓰세요.
 
 `--timeout 10m`은 대기 중인 통화의 종료를 요청하며 REST 방식에서는 `--wait`가
 필수입니다. 기본 타임아웃은 없습니다. 생성 응답이 늦거나 Ctrl-C·타임아웃 뒤
@@ -202,12 +233,39 @@ REST 배치는 한 실행 안에서 작업별 멱등 키를 만들고 재시도�
 확인하세요. WebSocket 배치 재시도에는 REST 멱등 보호가 없습니다. 각 통화의
 `--timeout` 기본값은 제한 없음입니다.
 
-## 6. JSON 출력과 exit code
+## 6. 도구·에이전트·크루 관리
 
-`--json`을 주면 stdout에 한 줄에 JSON 하나를 씁니다. REST `call create --wait`는
-상태가 바뀔 때마다 `cli.status`를, WebSocket 통화는 게이트웨이 프레임을 그대로
-출력합니다. 배치는 `cli.task`, `cli.retry`도 출력합니다. 경고와 로그는 stderr에
-씁니다. **일반적으로 모든 명령은 정확히 한 줄의 `cli.result`로 끝납니다:**
+```sh
+tello tool list --limit 50                         # 한 페이지. 다음은 nextCursor를 --cursor로
+tello agent get 12                                 # 전체 설정(agent list는 통화에 쓸 수 있는 대상만)
+tello tool create --body @tool.json                # JSON 객체, @파일, 또는 - (stdin)
+tello agent update 12 --body '{"toolIds":["41","7"]}'   # 보낸 필드만 바뀜
+tello crew delete 34
+tello crew generate --goal "치과 예약 고객에게 전화해 내일 예약을 확인한다" --wait
+tello crew generation 57
+```
+
+쓰기는 저장·배포·운영 반영을 한 요청에서 합니다. 다음 통화부터 바로 쓰이며 버릴
+초안이 없습니다. 필드 이름은 REST API 문서를 따르고, `toolIds` 같은 목록과 크루
+`graph` 같은 객체는 통째로 바뀝니다. `create`는 통화 생성처럼 멱등 키를 보냅니다.
+`writeOutcomeUnknown`(exit 8)이나 응답 유실은 이미 반영됐을 수 있다는 뜻이므로
+다시 보내기 전에 `get`이나 `list`로 확인하세요. 거절에는 `data.reason`과 한국어
+`data.detail`이 옵니다.
+
+`crew generate`는 목표로 크루를 만드는 작업입니다. `--wait`가 없으면 작업을
+반환하고, `--wait`는 상태를 출력하다가 `crew`가 담긴 작업을 반환합니다. 실패한
+작업은 그 `error.code`(예: `crewDeployFailed`)로 exit 8입니다. `--timeout`과
+Ctrl-C는 대기만 멈추고 작업은 계속됩니다. 계정당 작업은 하나씩만 돌고
+(`crewGenerationInProgress`), 같은 목표는 진행 중이거나 막 끝난 작업을 돌려주므로
+크루가 두 번 만들어지지 않습니다.
+
+## 7. JSON 출력과 exit code
+
+`--json`을 주면 stdout에 한 줄에 JSON 하나를 씁니다. REST `call create --wait`와
+`crew generate --wait`는 상태가 바뀔 때마다 `cli.status`를, WebSocket 통화는
+게이트웨이 프레임을 그대로 출력합니다. 배치는 `cli.task`, `cli.retry`도 출력합니다.
+경고와 로그는 stderr에 씁니다. **일반적으로 모든 명령은 정확히 한 줄의
+`cli.result`로 끝납니다:**
 
 ```json
 {"type":"cli.result","ok":true,"data":{"id":"c_12345","status":"completed","summary":"…"}}
@@ -224,18 +282,18 @@ REST 통화 결과는 통화 객체이고, WebSocket 통화 결과는 `callId`�
 | --- | --- | --- |
 | 0 | — | 성공 |
 | 1 | `internal` | 예상하지 못한 오류 |
-| 2 | `usage` | 플래그·인자 오류(형식이 틀린 통화 id·멱등 키 포함), 잘못된 API·게이트웨이 URL(`invalidUrl`) |
-| 3 | `auth` | API 키 없음·거부 |
+| 2 | `usage` | 플래그·인자 오류(형식이 틀린 id·`--body`·멱등 키 포함), 잘못된 API·게이트웨이 URL(`invalidUrl`) |
+| 3 | `auth` | API 키 없음·거부, 키 권한·허용 IP 밖(`insufficientScope`, `ipNotAllowed`) |
 | 4 | `refused` | 계정 정책 거부: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, … |
-| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, … |
+| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
 | 6 | `callEnded` | 통화가 완료되지 못함: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | 연결 실패·끊김(인증 중 끊김 포함) |
-| 8 | `server` | 서비스 측 오류: `callOutcomeUnknown`(발신됐을 수 있음), `transferOutcomeUnknown`(전환이 요청됐을 수 있음), `internalError`, `callSetupFailed`, … |
+| 8 | `server` | 서비스 측 오류: `callOutcomeUnknown`(발신됐을 수 있음), `transferOutcomeUnknown`(전환이 요청됐을 수 있음), `writeOutcomeUnknown`(반영됐을 수 있음), 크루 자동 생성 실패, `internalError`, … |
 | 9 | `handler` | 핸들러 실행 실패, 통화 중 종료 |
-| 75 | `temporary` | 나중에 재시도: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `callProviderUnavailable`, … |
+| 75 | `temporary` | 나중에 재시도: `concurrentLimitExceeded`, `duplicateCall`, `voiceGatewayUnavailable`, `upstreamUnavailable`, `crewGenerationInProgress`, … |
 | 130 | `interrupted` | Ctrl-C, SIGTERM |
 
-## 7. 코딩 에이전트
+## 8. 코딩 에이전트
 
 ```sh
 tello init                          # .claude/skills/tello/SKILL.md, .codex/skills/tello/SKILL.md 생성
@@ -248,7 +306,7 @@ Claude Code와 Codex는 스킬 파일을 자동으로 읽습니다. 스킬 파�
 파일을 알려 줍니다. 스킬을 지원하지 않는 에이전트는 지침 파일에
 `tello guide coding-agent --brief`를 적어 두세요.
 
-## 8. 개발
+## 9. 개발
 
 ```sh
 go test -race ./...

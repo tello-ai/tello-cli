@@ -33,6 +33,7 @@ type Create struct {
 type Transfer struct {
 	CallID         string
 	Body           map[string]any
+	Raw            string // the body as sent
 	IdempotencyKey string
 }
 
@@ -62,6 +63,9 @@ type Server struct {
 	calls          map[string]*call
 	byKey          map[string]string
 	nextID         int
+	res            resources
+	gen            generations
+	drafts         drafts
 }
 
 // New starts a fake API that accepts only key. New calls report "dialing",
@@ -74,6 +78,9 @@ func New(t testing.TB, key string) *Server {
 		calls:    map[string]*call{},
 		byKey:    map[string]string{},
 		listPage: map[string]any{"data": []any{}, "nextCursor": nil},
+		res:      newResources(),
+		gen:      newGenerations(),
+		drafts:   newDrafts(),
 	}
 	srv := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(srv.Close)
@@ -160,6 +167,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1")
+	if s.serveGeneration(w, r, path) || s.serveDraft(w, r, path) || s.serveResource(w, r, path) {
+		return
+	}
 	switch {
 	case r.Method == http.MethodGet && path == "/agents":
 		writeJSON(w, 200, map[string]any{"data": orEmpty(s.agents)})
@@ -223,13 +233,19 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, s.object(s.calls[id]))
 		return
 	}
-	s.nextID++
-	c := &call{id: fmt.Sprintf("c_%d", s.nextID), statuses: append([]string(nil), s.statuses...)}
-	s.calls[c.id] = c
+	c := s.newCall()
 	if key != "" {
 		s.byKey[key] = c.id
 	}
 	writeJSON(w, 201, s.object(c))
+}
+
+// newCall records a call that runs through the scripted statuses.
+func (s *Server) newCall() *call {
+	s.nextID++
+	c := &call{id: fmt.Sprintf("c_%d", s.nextID), statuses: append([]string(nil), s.statuses...)}
+	s.calls[c.id] = c
+	return c
 }
 
 func (s *Server) transfer(w http.ResponseWriter, r *http.Request, id string) {
@@ -237,7 +253,7 @@ func (s *Server) transfer(w http.ResponseWriter, r *http.Request, id string) {
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
 	key := r.Header.Get("Idempotency-Key")
-	s.transfers = append(s.transfers, Transfer{CallID: id, Body: body, IdempotencyKey: key})
+	s.transfers = append(s.transfers, Transfer{CallID: id, Body: body, Raw: string(raw), IdempotencyKey: key})
 	c := s.calls[id]
 	switch {
 	case len(s.transferFails) > 0:

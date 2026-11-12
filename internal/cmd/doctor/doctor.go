@@ -1,4 +1,4 @@
-// Package doctor implements `tello doctor` (docs/design.md section 11).
+// Package doctor implements `tello doctor` (docs/design.md section 13).
 package doctor
 
 import (

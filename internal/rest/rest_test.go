@@ -136,6 +136,10 @@ func TestCreateCallRequest(t *testing.T) {
 	}
 }
 
+// phoneTransfer is the cold transfer to a phone number earlier versions
+// sent; its bytes must not change.
+var phoneTransfer = rest.Transfer{Mode: "cold", Destination: rest.TransferDestination{Type: "phone", Target: "+821012345678"}}
+
 func TestTransferCallRequest(t *testing.T) {
 	var (
 		gotPath, gotIdem string
@@ -150,7 +154,7 @@ func TestTransferCallRequest(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"id":"c_1","status":"inProgress"}`)
 	})
-	call, err := c.TransferCall(context.Background(), "c_1", "+821012345678", "transfer-1")
+	call, err := c.TransferCall(context.Background(), "c_1", phoneTransfer, "transfer-1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -74,7 +74,7 @@ func TestMissingAPIKeyExitsAuth(t *testing.T) {
 }
 
 func TestGroupsPrintHelpWithoutSubcommand(t *testing.T) {
-	for _, args := range [][]string{nil, {"call"}, {"auth"}, {"agent"}, {"crew"}} {
+	for _, args := range [][]string{nil, {"call"}, {"auth"}, {"agent"}, {"crew"}, {"tool"}, {"call", "draft"}} {
 		code, stdout, stderr := run(t, args...)
 		if code != 0 {
 			t.Fatalf("%v: exit = %d, want 0 (stderr %q)", args, code, stderr)

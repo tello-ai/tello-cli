@@ -86,17 +86,28 @@ the call when the request was accepted; check the outcome with tello call get.`,
 }
 
 func newTransfer(a *app.App) *cobra.Command {
-	var to, key string
+	var (
+		to, key, mode, message, planArg string
+		agentApp                        bool
+	)
 	cmd := &cobra.Command{
-		Use:   "transfer <callId> --to <number> [--idempotency-key <key>]",
-		Short: "Ask the service to transfer a live call to a phone number",
+		Use:   "transfer <callId> (--to <number> | --agent-app) [--mode cold|warm] [--plan <JSON|@file|->] [--message <text>] [--idempotency-key <key>]",
+		Short: "Ask the service to transfer a live call to a phone number or agent app counselors",
 		Long: `Ask the service to transfer a live call of this account to a phone number
-(immediate transfer). Any answered call can be transferred, inbound calls
-included. The result is the call when the request was accepted, not the
-outcome: the call stays inProgress while the number is dialed and also when
-the transfer fails. Once it succeeds the AI leaves and a phone call ends; a
-browser call (web call) can stay inProgress until that conversation ends.
-Check it with tello call get.
+(--to) or to the agent app counselors of the call's agent (--agent-app). Any
+answered call can be transferred, inbound calls included.
+
+--mode cold (default) connects at once. --mode warm, phone numbers only,
+briefs the person who answers first and needs --plan, the transferPlan object
+of the REST API, e.g. {"mode":"warm-transfer-say-summary"}. A cold phone
+transfer takes --plan only for {"mode":"blind-transfer-add-summary-to-sip-header"}.
+--message is said to the customer before the transfer.
+
+The result is the call when the request was accepted, not the outcome: the
+call stays inProgress while the number is dialed and also when the transfer
+fails (it is transferring while agent app counselors are called). Once it
+succeeds the AI leaves and a phone call ends; a browser call (web call) can
+stay inProgress until that conversation ends. Check it with tello call get.
 
 Accepted is not done: a request sent while the call is ending, while another
 transfer is still running, or after a counselor took the call over is
@@ -107,16 +118,40 @@ Each run uses a new idempotency key unless --idempotency-key is given. Reuse
 a key only to resend a request whose response was lost; resending an accepted
 request with its key only replays the acceptance, so a new attempt after a
 failed transfer needs a new key.`,
+		Example: `  tello call transfer c_12345 --to +821012345678
+  tello call transfer c_12345 --to +821012345678 --mode warm --plan '{"mode":"warm-transfer-say-summary"}'
+  tello call transfer c_12345 --agent-app`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneCallID(args)
 			if err != nil {
 				return err
 			}
-			if to == "" {
-				return app.Usagef("--to is required")
+			hasPlan := cmd.Flags().Changed("plan")
+			switch {
+			case agentApp && cmd.Flags().Changed("to"):
+				return app.Usagef("use either --to or --agent-app, not both")
+			case !agentApp && to == "":
+				return app.Usagef("--to is required (or --agent-app)")
+			case mode != "cold" && mode != "warm":
+				return app.Usagef("--mode must be cold or warm")
+			case mode == "warm" && agentApp:
+				return app.Usagef("--mode warm transfers to phone numbers only")
+			case mode == "warm" && !hasPlan:
+				return app.Usagef("--mode warm needs --plan")
+			case agentApp && hasPlan:
+				return app.Usagef("--plan is not for --agent-app")
 			}
-			if err := checkIdempotencyKey(cmd, key); err != nil {
+			req := rest.Transfer{Mode: mode, Destination: rest.TransferDestination{Type: "phone", Target: to}, Message: message}
+			if agentApp {
+				req.Destination = rest.TransferDestination{Type: "agentApp"}
+			}
+			if hasPlan {
+				if req.TransferPlan, err = a.ObjectArg("--plan", planArg); err != nil {
+					return err
+				}
+			}
+			if err := app.CheckIdempotencyKey(cmd, key); err != nil {
 				return err
 			}
 			c, err := rest.New(a)
@@ -124,19 +159,23 @@ failed transfer needs a new key.`,
 				return err
 			}
 			if key == "" {
-				if key, err = randomID(); err != nil {
+				if key, err = app.RandomID(); err != nil {
 					return err
 				}
 			}
-			call, err := c.TransferCall(cmd.Context(), id, to, key)
+			call, err := c.TransferCall(cmd.Context(), id, req, key)
 			if errors.Is(err, context.Canceled) {
 				err = app.NewError(app.KindInterrupted, "interrupted", "interrupted; the transfer may have been requested, check the call before retrying with the same idempotency key")
 			}
 			if err != nil {
-				return withIdempotencyKey(err, key)
+				return app.WithIdempotencyKey(err, key)
 			}
 			if !a.JSON {
-				a.Printf("Transfer of %s to %s requested (status %s). Check it with `tello call get %s`.\n", id, to, rest.Status(call), id)
+				dest := to
+				if agentApp {
+					dest = "the agent app counselors"
+				}
+				a.Printf("Transfer of %s to %s requested (status %s). Check it with `tello call get %s`.\n", id, dest, rest.Status(call), id)
 			}
 			if err := a.WriteResult(call); err != nil {
 				a.Warnf("output failed after the transfer of %s was accepted (idempotency key %s); check it with `tello call get %s`: %v", id, key, id, err)
@@ -147,21 +186,12 @@ failed transfer needs a new key.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&to, "to", "", "phone number to transfer the call to (e.g. +821012345678)")
+	f.BoolVar(&agentApp, "agent-app", false, "transfer to the agent app counselors of the call's agent instead of a number")
+	f.StringVar(&mode, "mode", "cold", "cold (connect at once) or warm (brief the person who answers first; needs --plan)")
+	f.StringVar(&planArg, "plan", "", "transferPlan as a JSON object, @file holding one, or - for stdin")
+	f.StringVar(&message, "message", "", "what to tell the customer before the transfer (default: the service's)")
 	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
 	return cmd
-}
-
-// withIdempotencyKey classifies err and adds the key the request was sent
-// with to its data, so the caller can resend the same request.
-func withIdempotencyKey(err error, key string) *app.Error {
-	e := app.Classify(err)
-	data, _ := e.Data.(map[string]any)
-	if data == nil {
-		data = map[string]any{}
-	}
-	data["idempotencyKey"] = key
-	e.Data = data
-	return e
 }
 
 func newList(a *app.App) *cobra.Command {

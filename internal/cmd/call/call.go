@@ -1,12 +1,8 @@
 // Package call implements `tello call create | get | list | end | transfer |
-// batch` (docs/design.md sections 8 to 10).
+// batch | draft` (docs/design.md sections 8 to 11).
 package call
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"io"
 	"os"
 	"strings"
 
@@ -23,7 +19,7 @@ func New(a *app.App) *cobra.Command {
 		Args:  cobra.ArbitraryArgs,
 		RunE:  a.GroupRunE,
 	}
-	cmd.AddCommand(newCreate(a), newGet(a), newList(a), newEnd(a), newTransfer(a), newBatch(a))
+	cmd.AddCommand(newCreate(a), newGet(a), newList(a), newEnd(a), newTransfer(a), newBatch(a), newDraft(a))
 	return cmd
 }
 
@@ -68,21 +64,8 @@ func parseMetadata(arg string) (map[string]any, error) {
 		raw = data
 	}
 	var metadata map[string]any
-	if err := decodeJSON(raw, &metadata); err != nil || metadata == nil {
+	if err := app.DecodeJSON(raw, &metadata); err != nil || metadata == nil {
 		return nil, app.Usagef("--metadata must be a JSON object")
 	}
 	return metadata, nil
-}
-
-// decodeJSON decodes exactly one JSON value, keeping numbers exact.
-func decodeJSON(raw []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("unexpected data after the JSON value")
-	}
-	return nil
 }
