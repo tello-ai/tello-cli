@@ -63,6 +63,7 @@ type Server struct {
 	byKey          map[string]string
 	nextID         int
 	res            resources
+	gen            generations
 }
 
 // New starts a fake API that accepts only key. New calls report "dialing",
@@ -76,6 +77,7 @@ func New(t testing.TB, key string) *Server {
 		byKey:    map[string]string{},
 		listPage: map[string]any{"data": []any{}, "nextCursor": nil},
 		res:      newResources(),
+		gen:      newGenerations(),
 	}
 	srv := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(srv.Close)
@@ -162,7 +164,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1")
-	if s.serveResource(w, r, path) {
+	if s.serveGeneration(w, r, path) || s.serveResource(w, r, path) {
 		return
 	}
 	switch {

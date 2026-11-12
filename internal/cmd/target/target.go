@@ -20,8 +20,10 @@ func NewAgent(a *app.App) *cobra.Command {
 
 // NewCrew returns the `crew` command.
 func NewCrew(a *app.App) *cobra.Command {
-	return group(a, kind{res: rest.Crews, noun: "crew"}, "crews with an active production version", "crew ids are for call create --crew",
+	cmd := group(a, kind{res: rest.Crews, noun: "crew"}, "crews with an active production version", "crew ids are for call create --crew",
 		func(ctx context.Context, c *rest.Client) (rest.Object, error) { return c.ListCrews(ctx) })
+	cmd.AddCommand(newGenerate(a), newGeneration(a))
+	return cmd
 }
 
 func group(a *app.App, k kind, what, note string, list func(context.Context, *rest.Client) (rest.Object, error)) *cobra.Command {

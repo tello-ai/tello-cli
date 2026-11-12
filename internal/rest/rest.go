@@ -197,6 +197,7 @@ const (
 	opWriteCreate                  // creates a tool, agent or crew: exactly 201
 	opWriteUpdate                  // changes a tool, agent or crew: exactly 200
 	opWriteDelete                  // deletes a tool, agent or crew: exactly 204, no body
+	opGenerate                     // starts a crew generation: 202, or 200 for the job of the same goal
 )
 
 // accepts reports whether status is a success status the API documents
@@ -211,6 +212,8 @@ func (op operation) accepts(status int) bool {
 		return status == http.StatusCreated
 	case opWriteDelete:
 		return status == http.StatusNoContent
+	case opGenerate:
+		return status == http.StatusAccepted || status == http.StatusOK
 	}
 	return status >= 200 && status <= 299
 }
@@ -218,7 +221,7 @@ func (op operation) accepts(status int) bool {
 // write reports a tool, agent or crew write: it goes live at once and its
 // outcome is unknown when the response is lost.
 func (op operation) write() bool {
-	return op == opWriteCreate || op == opWriteUpdate || op == opWriteDelete
+	return op == opWriteCreate || op == opWriteUpdate || op == opWriteDelete || op == opGenerate
 }
 
 // long reports requests the service may take long to finish: placing a call
@@ -396,29 +399,32 @@ var kinds = map[string]app.Kind{
 	"callNotInProgress": app.KindTemporary,
 
 	// Tool, agent and crew management. upstreamUnavailable means the request
-	// was not processed; toolConflict clears once the concurrent edit is done.
-	"upstreamUnavailable": app.KindTemporary,
-	"toolConflict":        app.KindTemporary,
+	// was not processed; toolConflict clears once the concurrent edit is
+	// done, crewGenerationInProgress once the running job (data.id) ends.
+	"upstreamUnavailable":      app.KindTemporary,
+	"toolConflict":             app.KindTemporary,
+	"crewGenerationInProgress": app.KindTemporary,
 
 	// Validation and state refusals the caller must fix, whatever the HTTP
 	// status (invalidRequest can be 400 or 415).
-	"invalidRequest":       app.KindInvalid,
-	"invalidQuery":         app.KindInvalid,
-	"invalidCursor":        app.KindInvalid,
-	"payloadTooLarge":      app.KindInvalid,
-	"invalidTool":          app.KindInvalid,
-	"invalidAgent":         app.KindInvalid,
-	"invalidCrew":          app.KindInvalid,
-	"toolNotFound":         app.KindInvalid,
-	"defaultToolProtected": app.KindInvalid,
-	"toolInUse":            app.KindInvalid,
-	"toolTypeManaged":      app.KindInvalid,
-	"toolNotPublishable":   app.KindInvalid,
-	"agentEngineImmutable": app.KindInvalid,
-	"agentInUse":           app.KindInvalid,
-	"agentNotPublishable":  app.KindInvalid,
-	"crewInUse":            app.KindInvalid,
-	"crewNotPublishable":   app.KindInvalid,
+	"invalidRequest":         app.KindInvalid,
+	"invalidQuery":           app.KindInvalid,
+	"invalidCursor":          app.KindInvalid,
+	"payloadTooLarge":        app.KindInvalid,
+	"invalidTool":            app.KindInvalid,
+	"invalidAgent":           app.KindInvalid,
+	"invalidCrew":            app.KindInvalid,
+	"toolNotFound":           app.KindInvalid,
+	"defaultToolProtected":   app.KindInvalid,
+	"toolInUse":              app.KindInvalid,
+	"toolTypeManaged":        app.KindInvalid,
+	"toolNotPublishable":     app.KindInvalid,
+	"agentEngineImmutable":   app.KindInvalid,
+	"agentInUse":             app.KindInvalid,
+	"agentNotPublishable":    app.KindInvalid,
+	"crewInUse":              app.KindInvalid,
+	"crewNotPublishable":     app.KindInvalid,
+	"crewGenerationNotFound": app.KindInvalid,
 
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,
