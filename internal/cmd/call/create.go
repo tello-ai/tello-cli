@@ -62,7 +62,7 @@ func newCreate(a *app.App) *cobra.Command {
 				case timeout > 0 && !wait:
 					return app.Usagef("--timeout needs --wait: without it the command returns while the call runs")
 				}
-				if err := checkIdempotencyKey(cmd, idempotencyKey); err != nil {
+				if err := app.CheckIdempotencyKey(cmd, idempotencyKey); err != nil {
 					return err
 				}
 				variables, err := parseVars(vars)
@@ -125,7 +125,7 @@ func createREST(cmd *cobra.Command, a *app.App, tgt target, req rest.CreateCall,
 		return err
 	}
 	if key == "" {
-		if key, err = randomID(); err != nil {
+		if key, err = app.RandomID(); err != nil {
 			return err
 		}
 	}

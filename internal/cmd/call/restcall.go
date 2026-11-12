@@ -105,7 +105,7 @@ func createCall(ctx context.Context, c *rest.Client, req rest.CreateCall, key st
 			if r.err == nil {
 				return r.call, nil
 			}
-			return nil, withIdempotencyKey(r.err, key)
+			return nil, app.WithIdempotencyKey(r.err, key)
 		}
 	case <-ctx.Done():
 		timer := time.NewTimer(endGrace)

@@ -116,7 +116,7 @@ failed transfer needs a new key.`,
 			if to == "" {
 				return app.Usagef("--to is required")
 			}
-			if err := checkIdempotencyKey(cmd, key); err != nil {
+			if err := app.CheckIdempotencyKey(cmd, key); err != nil {
 				return err
 			}
 			c, err := rest.New(a)
@@ -124,7 +124,7 @@ failed transfer needs a new key.`,
 				return err
 			}
 			if key == "" {
-				if key, err = randomID(); err != nil {
+				if key, err = app.RandomID(); err != nil {
 					return err
 				}
 			}
@@ -133,7 +133,7 @@ failed transfer needs a new key.`,
 				err = app.NewError(app.KindInterrupted, "interrupted", "interrupted; the transfer may have been requested, check the call before retrying with the same idempotency key")
 			}
 			if err != nil {
-				return withIdempotencyKey(err, key)
+				return app.WithIdempotencyKey(err, key)
 			}
 			if !a.JSON {
 				a.Printf("Transfer of %s to %s requested (status %s). Check it with `tello call get %s`.\n", id, to, rest.Status(call), id)
@@ -149,19 +149,6 @@ failed transfer needs a new key.`,
 	f.StringVar(&to, "to", "", "phone number to transfer the call to (e.g. +821012345678)")
 	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
 	return cmd
-}
-
-// withIdempotencyKey classifies err and adds the key the request was sent
-// with to its data, so the caller can resend the same request.
-func withIdempotencyKey(err error, key string) *app.Error {
-	e := app.Classify(err)
-	data, _ := e.Data.(map[string]any)
-	if data == nil {
-		data = map[string]any{}
-	}
-	data["idempotencyKey"] = key
-	e.Data = data
-	return e
 }
 
 func newList(a *app.App) *cobra.Command {

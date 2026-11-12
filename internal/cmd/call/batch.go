@@ -142,7 +142,7 @@ func restPlacer(a *app.App, o batchOptions) (func(context.Context, int, task) (c
 	if err != nil {
 		return nil, err
 	}
-	runID, err := randomID()
+	runID, err := app.RandomID()
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func loadTasks(a *app.App, arg string, rest bool) ([]task, error) {
 		return nil, app.Usagef("--tasks: %v", err)
 	}
 	var tasks []task
-	if err := decodeJSON(raw, &tasks); err != nil {
+	if err := app.DecodeJSON(raw, &tasks); err != nil {
 		return nil, app.Usagef("--tasks must be a JSON array of task objects: %v", err)
 	}
 	if len(tasks) == 0 {
