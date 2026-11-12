@@ -62,6 +62,7 @@ type Server struct {
 	calls          map[string]*call
 	byKey          map[string]string
 	nextID         int
+	res            resources
 }
 
 // New starts a fake API that accepts only key. New calls report "dialing",
@@ -74,6 +75,7 @@ func New(t testing.TB, key string) *Server {
 		calls:    map[string]*call{},
 		byKey:    map[string]string{},
 		listPage: map[string]any{"data": []any{}, "nextCursor": nil},
+		res:      newResources(),
 	}
 	srv := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(srv.Close)
@@ -160,6 +162,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1")
+	if s.serveResource(w, r, path) {
+		return
+	}
 	switch {
 	case r.Method == http.MethodGet && path == "/agents":
 		writeJSON(w, 200, map[string]any{"data": orEmpty(s.agents)})

@@ -178,4 +178,9 @@ var hints = map[string]string{
 	"callAlreadyActive":       "The previous call is still being cleaned up. Retry shortly.",
 	"connectionFailed":        "Check the network and the URL (--api-url / TELLO_API_URL for the API, --url / TELLO_URL for -i and handler calls).",
 	"routeNotFound":           "Check --api-url / TELLO_API_URL; it must end in /v1.",
+	"insufficientScope":       "The API key lacks the scope in data.requiredScope; grant it in the portal (Developer › API keys).",
+	"ipNotAllowed":            "This address (data.ip) is not in the API key's allowed IP list; check it in the portal.",
+	"writeOutcomeUnknown":     "The change may have been applied. Check with get or list first; create again with a new key only if it is missing.",
+	"upstreamUnavailable":     "The request was not processed. Retry later.",
+	"toolConflict":            "The tool was changed at the same time. Get it again, then resend.",
 }

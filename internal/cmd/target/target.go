@@ -1,5 +1,6 @@
-// Package target implements `tello agent list` and `tello crew list`: the
-// portal agents and crews a call can be placed with (--agent / --crew).
+// Package target implements `tello agent`, `tello crew` and `tello tool`:
+// the portal agents and crews a call can be placed with (--agent / --crew)
+// and the tools they use, listed and managed through the REST API.
 package target
 
 import (

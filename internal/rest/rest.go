@@ -189,23 +189,41 @@ func (c *Client) ListCrews(ctx context.Context) (Object, error) {
 type operation int
 
 const (
-	opRead     operation = iota // get, list, crews: no side effects
-	opAgents                    // agent list, also the key check: exactly 200
-	opCreate                    // places a call
-	opEnd                       // asks to end a call: exactly 202
-	opTransfer                  // asks to transfer a call: exactly 202
+	opRead        operation = iota // get, list, crews: no side effects
+	opAgents                       // agent list, also the key check: exactly 200
+	opCreate                       // places a call
+	opEnd                          // asks to end a call: exactly 202
+	opTransfer                     // asks to transfer a call: exactly 202
+	opWriteCreate                  // creates a tool, agent or crew: exactly 201
+	opWriteUpdate                  // changes a tool, agent or crew: exactly 200
+	opWriteDelete                  // deletes a tool, agent or crew: exactly 204, no body
 )
 
-// wantStatus is the only success status accepted, or 0 for any 2xx.
-func (op operation) wantStatus() int {
+// accepts reports whether status is a success status the API documents
+// for op.
+func (op operation) accepts(status int) bool {
 	switch op {
-	case opAgents:
-		return http.StatusOK
+	case opAgents, opWriteUpdate:
+		return status == http.StatusOK
 	case opEnd, opTransfer:
-		return http.StatusAccepted
+		return status == http.StatusAccepted
+	case opWriteCreate:
+		return status == http.StatusCreated
+	case opWriteDelete:
+		return status == http.StatusNoContent
 	}
-	return 0
+	return status >= 200 && status <= 299
 }
+
+// write reports a tool, agent or crew write: it goes live at once and its
+// outcome is unknown when the response is lost.
+func (op operation) write() bool {
+	return op == opWriteCreate || op == opWriteUpdate || op == opWriteDelete
+}
+
+// long reports requests the service may take long to finish: placing a call
+// and writes that deploy what they save.
+func (op operation) long() bool { return op == opCreate || op.write() }
 
 func (c *Client) do(ctx context.Context, op operation, method, path string, query url.Values, body any, idempotencyKey string) (Object, error) {
 	target := c.base + path
@@ -235,7 +253,7 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 	}
 
 	httpClient := c.http
-	if op == opCreate {
+	if op.long() {
 		httpClient = c.createHTTP
 	}
 	resp, err := httpClient.Do(req)
@@ -243,11 +261,13 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		switch op {
-		case opCreate:
+		switch {
+		case op == opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionFailed", "create request failed; call outcome may be unknown, check the call list before retrying")
-		case opTransfer:
+		case op == opTransfer:
 			return nil, app.NewError(app.KindConnection, "connectionFailed", "transfer request failed; the transfer may have been requested, check the call before retrying with the same idempotency key")
+		case op.write():
+			return nil, app.NewError(app.KindConnection, "connectionFailed", fmt.Sprintf("%s request failed; the change may have been applied, check it with get or list before retrying (a create with the same idempotency key)", method))
 		}
 		return nil, app.NewError(app.KindConnection, "connectionFailed", fmt.Sprintf("%s request failed", method))
 	}
@@ -257,11 +277,13 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 		if errors.Is(err, context.Canceled) {
 			return nil, context.Canceled
 		}
-		switch op {
-		case opCreate:
+		switch {
+		case op == opCreate:
 			return nil, app.NewError(app.KindConnection, "connectionClosed", "create response could not be read; call outcome may be unknown, check the call list before retrying")
-		case opTransfer:
+		case op == opTransfer:
 			return nil, app.NewError(app.KindConnection, "connectionClosed", "transfer response could not be read; the transfer may have been requested, check the call before retrying with the same idempotency key")
+		case op.write():
+			return nil, app.NewError(app.KindConnection, "connectionClosed", fmt.Sprintf("%s response could not be read; the change may have been applied, check it with get or list before retrying (a create with the same idempotency key)", method))
 		}
 		return nil, app.NewError(app.KindConnection, "connectionClosed", "could not read response")
 	}
@@ -275,12 +297,19 @@ func (c *Client) do(ctx context.Context, op operation, method, path string, quer
 				// Not a documented transfer error (e.g. a proxy page): the
 				// service may have taken the request before it failed.
 				return nil, app.NewError(app.KindServer, "transferOutcomeUnknown", fmt.Sprintf("transfer outcome is unknown (%s); the transfer may have been requested, check the call before retrying with the same idempotency key", apiErr.Message))
+			case op.write() && resp.StatusCode >= 500:
+				// Not a documented error (e.g. a proxy page): the write may
+				// have been applied before it failed.
+				return nil, app.NewError(app.KindServer, "writeOutcomeUnknown", fmt.Sprintf("write outcome is unknown (%s); check it with get or list before retrying (a create with the same idempotency key)", apiErr.Message))
 			}
 		}
 		return nil, apiErr
 	}
-	if want := op.wantStatus(); want != 0 && resp.StatusCode != want {
+	if !op.accepts(resp.StatusCode) {
 		return nil, app.NewError(app.KindServer, "invalidResponse", "unexpected API response status")
+	}
+	if op == opWriteDelete {
+		return Object{}, nil
 	}
 	var obj Object
 	if err := decode(raw, &obj); err != nil || obj == nil {
@@ -341,6 +370,9 @@ func Terminal(status string) bool {
 // listed fall back to the HTTP status in statusKind.
 var kinds = map[string]app.Kind{
 	"unauthenticated": app.KindAuth,
+	// The key is valid but may not be used here: fix its IP list or scopes.
+	"ipNotAllowed":      app.KindAuth,
+	"insufficientScope": app.KindAuth,
 
 	// Account policy: fixing it takes a human, retrying does not help.
 	"insufficientCredit":      app.KindRefused,
@@ -363,9 +395,37 @@ var kinds = map[string]app.Kind{
 	// handed to a portal counselor): the same request can succeed later.
 	"callNotInProgress": app.KindTemporary,
 
+	// Tool, agent and crew management. upstreamUnavailable means the request
+	// was not processed; toolConflict clears once the concurrent edit is done.
+	"upstreamUnavailable": app.KindTemporary,
+	"toolConflict":        app.KindTemporary,
+
+	// Validation and state refusals the caller must fix, whatever the HTTP
+	// status (invalidRequest can be 400 or 415).
+	"invalidRequest":       app.KindInvalid,
+	"invalidQuery":         app.KindInvalid,
+	"invalidCursor":        app.KindInvalid,
+	"payloadTooLarge":      app.KindInvalid,
+	"invalidTool":          app.KindInvalid,
+	"invalidAgent":         app.KindInvalid,
+	"invalidCrew":          app.KindInvalid,
+	"toolNotFound":         app.KindInvalid,
+	"defaultToolProtected": app.KindInvalid,
+	"toolInUse":            app.KindInvalid,
+	"toolTypeManaged":      app.KindInvalid,
+	"toolNotPublishable":   app.KindInvalid,
+	"agentEngineImmutable": app.KindInvalid,
+	"agentInUse":           app.KindInvalid,
+	"agentNotPublishable":  app.KindInvalid,
+	"crewInUse":            app.KindInvalid,
+	"crewNotPublishable":   app.KindInvalid,
+
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,
-	"internalError":      app.KindServer,
+	// A tool, agent or crew write may have been applied: check before
+	// creating again with a new key.
+	"writeOutcomeUnknown": app.KindServer,
+	"internalError":       app.KindServer,
 }
 
 func statusKind(status int) app.Kind {
