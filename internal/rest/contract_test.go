@@ -72,7 +72,7 @@ func TestControlValidatesCall(t *testing.T) {
 	control := map[string]func(*rest.Client) error{
 		"end": func(c *rest.Client) error { _, err := c.EndCall(context.Background(), "c_1"); return err },
 		"transfer": func(c *rest.Client) error {
-			_, err := c.TransferCall(context.Background(), "c_1", "+821012345678", "k")
+			_, err := c.TransferCall(context.Background(), "c_1", phoneTransfer, "k")
 			return err
 		},
 	}
@@ -194,7 +194,7 @@ func TestTransferConnectionFailureWarnsOfUnknownOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.TransferCall(context.Background(), "c_1", "+821012345678", "key")
+	_, err = c.TransferCall(context.Background(), "c_1", phoneTransfer, "key")
 	if err == nil {
 		t.Fatal("expected connection failure")
 	}
@@ -226,7 +226,7 @@ func TestTransferServerErrorClassification(t *testing.T) {
 				w.WriteHeader(tt.status)
 				_, _ = io.WriteString(w, tt.body)
 			})
-			_, err := c.TransferCall(context.Background(), "c_1", "+821012345678", "key")
+			_, err := c.TransferCall(context.Background(), "c_1", phoneTransfer, "key")
 			if err == nil {
 				t.Fatal("expected error")
 			}

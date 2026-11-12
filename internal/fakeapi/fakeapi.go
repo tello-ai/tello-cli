@@ -33,6 +33,7 @@ type Create struct {
 type Transfer struct {
 	CallID         string
 	Body           map[string]any
+	Raw            string // the body as sent
 	IdempotencyKey string
 }
 
@@ -252,7 +253,7 @@ func (s *Server) transfer(w http.ResponseWriter, r *http.Request, id string) {
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
 	key := r.Header.Get("Idempotency-Key")
-	s.transfers = append(s.transfers, Transfer{CallID: id, Body: body, IdempotencyKey: key})
+	s.transfers = append(s.transfers, Transfer{CallID: id, Body: body, Raw: string(raw), IdempotencyKey: key})
 	c := s.calls[id]
 	switch {
 	case len(s.transferFails) > 0:

@@ -171,7 +171,7 @@ var hints = map[string]string{
 	"concurrentLimitExceeded":  "All concurrent call lines are busy. Retry after a call ends.",
 	"duplicateCall":            "A call to this number is still running. Retry after it ends.",
 	"callNotInProgress":        "The call is not inProgress: still dialing, or being handed to a portal counselor. Retry once `tello call get` shows inProgress.",
-	"invalidTransferRequest":   "--to must be a phone number of 8 to 15 digits once spaces, hyphens, parentheses and dots are removed and +82 is turned into the 0 national form.",
+	"invalidTransferRequest":   "--to must be a phone number of 8 to 15 digits once spaces, hyphens, parentheses and dots are removed and +82 is turned into the 0 national form. --message must be 1 to 200 characters, and --plan must use a plan mode of the transfer mode with only its fields.",
 	"voiceGatewayUnavailable":  "The voice service could not take the request now. Retry later with the same --idempotency-key; a transfer may still go through late, so check `tello call get` first.",
 	"callProviderDraining":     "The call provider is not accepting new calls. Retry later.",
 	"callProviderUnavailable":  "The call provider is unavailable. Retry later.",

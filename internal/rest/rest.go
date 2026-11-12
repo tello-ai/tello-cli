@@ -153,26 +153,33 @@ func (c *Client) EndCall(ctx context.Context, callID string) (Object, error) {
 	return validateCall(call, callID)
 }
 
-// transferCall is the POST /calls/{id}/transfer body. The API supports only
-// an immediate (cold) transfer to a phone number.
-type transferCall struct {
-	Mode        string              `json:"mode"`
-	Destination transferDestination `json:"destination"`
+// Transfer is the POST /calls/{id}/transfer body. Mode is "cold" (connect
+// at once) or "warm" (brief the person who answers first, phone only, with
+// TransferPlan required). Message is said to the customer before the
+// transfer. Unset optional fields are omitted, so a cold phone transfer is
+// the same request as before warm transfers existed.
+type Transfer struct {
+	Mode         string              `json:"mode"`
+	Destination  TransferDestination `json:"destination"`
+	Message      string              `json:"message,omitempty"`
+	TransferPlan map[string]any      `json:"transferPlan,omitempty"`
 }
 
-type transferDestination struct {
+// TransferDestination is a phone number (Type "phone", Target the number)
+// or the agent app counselors of the call's agent (Type "agentApp").
+type TransferDestination struct {
 	Type   string `json:"type"`
-	Target string `json:"target"`
+	Target string `json:"target,omitempty"`
 }
 
-// TransferCall asks the service to hand a live call over to the phone number
-// to. idempotencyKey is required by the API; resending an accepted request
+// TransferCall asks the service to hand a live call over as body says.
+// idempotencyKey is required by the API; resending an accepted request
 // with the same key replays the stored 202 instead of transferring again.
 // Refused requests are not stored, so the same key runs them again. The
 // returned call is the state when the request was accepted; the call stays
-// inProgress while the transfer runs.
-func (c *Client) TransferCall(ctx context.Context, callID, to, idempotencyKey string) (Object, error) {
-	body := transferCall{Mode: "cold", Destination: transferDestination{Type: "phone", Target: to}}
+// inProgress while a phone transfer runs (transferring while agent app
+// counselors are called).
+func (c *Client) TransferCall(ctx context.Context, callID string, body Transfer, idempotencyKey string) (Object, error) {
 	call, err := c.do(ctx, opTransfer, http.MethodPost, "/calls/"+url.PathEscape(callID)+"/transfer", nil, body, idempotencyKey)
 	if err != nil {
 		return nil, err
@@ -457,6 +464,9 @@ var kinds = map[string]app.Kind{
 	"draftNotConfirmable":   app.KindInvalid,
 	"draftExpired":          app.KindInvalid,
 	"draftRevisionLimit":    app.KindInvalid,
+	// Transfers the API does not support.
+	"transferModeUnsupported":        app.KindInvalid,
+	"transferDestinationUnsupported": app.KindInvalid,
 
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,
