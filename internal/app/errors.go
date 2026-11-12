@@ -188,4 +188,9 @@ var hints = map[string]string{
 	"callRefused":              "The instructions were judged not to be something the AI can do (data.detectedIntent). Change the request.",
 	"instructionsUnclear":      "Answer data.question in --instructions and retry with the same --idempotency-key.",
 	"notifyUnavailable":        "Turn on the agent's call-end notification and register a notification number (data.reason), or drop --notify-on-end.",
+	"draftNotApplicable":       "This agent does not use drafts: place the call with `tello call create` and the same values.",
+	"draftAlreadyConfirmed":    "The call was already placed (data.callId). Check it with `tello call get`; do not confirm again.",
+	"draftSuperseded":          "A revision replaced this draft. Use the newest draft id.",
+	"draftExpired":             "Drafts expire after 10 minutes. Create a new one.",
+	"draftRevisionLimit":       "No more revisions: confirm this draft or create a new one.",
 }

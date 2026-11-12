@@ -209,20 +209,21 @@ type operation int
 const (
 	opRead        operation = iota // get, list, crews: no side effects
 	opAgents                       // agent list, also the key check: exactly 200
-	opCreate                       // places a call
+	opCreate                       // places a call, or may (call drafts)
 	opEnd                          // asks to end a call: exactly 202
 	opTransfer                     // asks to transfer a call: exactly 202
 	opWriteCreate                  // creates a tool, agent or crew: exactly 201
 	opWriteUpdate                  // changes a tool, agent or crew: exactly 200
 	opWriteDelete                  // deletes a tool, agent or crew: exactly 204, no body
 	opGenerate                     // starts a crew generation: 202, or 200 for the job of the same goal
+	opDraftRevise                  // revises a call draft: exactly 200
 )
 
 // accepts reports whether status is a success status the API documents
 // for op.
 func (op operation) accepts(status int) bool {
 	switch op {
-	case opAgents, opWriteUpdate:
+	case opAgents, opWriteUpdate, opDraftRevise:
 		return status == http.StatusOK
 	case opEnd, opTransfer:
 		return status == http.StatusAccepted
@@ -242,9 +243,9 @@ func (op operation) write() bool {
 	return op == opWriteCreate || op == opWriteUpdate || op == opWriteDelete || op == opGenerate
 }
 
-// long reports requests the service may take long to finish: placing a call
-// and writes that deploy what they save.
-func (op operation) long() bool { return op == opCreate || op.write() }
+// long reports requests the service may take long to finish: placing a call,
+// generating a call scenario and writes that deploy what they save.
+func (op operation) long() bool { return op == opCreate || op == opDraftRevise || op.write() }
 
 func (c *Client) do(ctx context.Context, op operation, method, path string, query url.Values, body any, idempotencyKey string) (Object, error) {
 	target := c.base + path
@@ -448,6 +449,14 @@ var kinds = map[string]app.Kind{
 	"notifyUnavailable":   app.KindInvalid,
 	"callRefused":         app.KindInvalid,
 	"instructionsUnclear": app.KindInvalid,
+	// Call drafts. draftAlreadyConfirmed carries the placed call's id.
+	"draftNotApplicable":    app.KindInvalid,
+	"draftNotFound":         app.KindInvalid,
+	"draftAlreadyConfirmed": app.KindInvalid,
+	"draftSuperseded":       app.KindInvalid,
+	"draftNotConfirmable":   app.KindInvalid,
+	"draftExpired":          app.KindInvalid,
+	"draftRevisionLimit":    app.KindInvalid,
 
 	// The call may have been placed: never retry with a new key.
 	"callOutcomeUnknown": app.KindServer,

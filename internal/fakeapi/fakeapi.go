@@ -64,6 +64,7 @@ type Server struct {
 	nextID         int
 	res            resources
 	gen            generations
+	drafts         drafts
 }
 
 // New starts a fake API that accepts only key. New calls report "dialing",
@@ -78,6 +79,7 @@ func New(t testing.TB, key string) *Server {
 		listPage: map[string]any{"data": []any{}, "nextCursor": nil},
 		res:      newResources(),
 		gen:      newGenerations(),
+		drafts:   newDrafts(),
 	}
 	srv := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(srv.Close)
@@ -164,7 +166,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/v1")
-	if s.serveGeneration(w, r, path) || s.serveResource(w, r, path) {
+	if s.serveGeneration(w, r, path) || s.serveDraft(w, r, path) || s.serveResource(w, r, path) {
 		return
 	}
 	switch {
@@ -230,13 +232,19 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, s.object(s.calls[id]))
 		return
 	}
-	s.nextID++
-	c := &call{id: fmt.Sprintf("c_%d", s.nextID), statuses: append([]string(nil), s.statuses...)}
-	s.calls[c.id] = c
+	c := s.newCall()
 	if key != "" {
 		s.byKey[key] = c.id
 	}
 	writeJSON(w, 201, s.object(c))
+}
+
+// newCall records a call that runs through the scripted statuses.
+func (s *Server) newCall() *call {
+	s.nextID++
+	c := &call{id: fmt.Sprintf("c_%d", s.nextID), statuses: append([]string(nil), s.statuses...)}
+	s.calls[c.id] = c
+	return c
 }
 
 func (s *Server) transfer(w http.ResponseWriter, r *http.Request, id string) {

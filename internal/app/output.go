@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tello-ai/tello-go/tello"
 )
@@ -116,13 +117,13 @@ func (a *App) printError(e *Error) {
 		if key, ok := data["idempotencyKey"].(string); ok && key != "" {
 			fmt.Fprintf(a.Stderr, "  idempotency key: %s\n", key)
 		}
-		if id, ok := data["id"].(string); ok && id != "" {
-			fmt.Fprintf(a.Stderr, "  call ID: %s\n", id)
-		}
-		if call, ok := data["call"].(map[string]any); ok {
-			if id, ok := call["id"].(string); ok && id != "" {
+		for _, id := range []any{data["id"], data["callId"], nested(data["call"], "id")} {
+			if id, ok := id.(string); ok && strings.HasPrefix(id, "c_") {
 				fmt.Fprintf(a.Stderr, "  call ID: %s\n", id)
 			}
+		}
+		if id, ok := data["id"].(string); ok && id != "" && !strings.HasPrefix(id, "c_") {
+			fmt.Fprintf(a.Stderr, "  id: %s\n", id)
 		}
 		if names, ok := data["missingVariables"]; ok {
 			fmt.Fprintf(a.Stderr, "  missing variables: %v\n", names)
@@ -131,4 +132,9 @@ func (a *App) printError(e *Error) {
 	if hint, ok := hints[e.Code]; ok {
 		fmt.Fprintf(a.Stderr, "  hint: %s\n", hint)
 	}
+}
+
+func nested(v any, key string) any {
+	m, _ := v.(map[string]any)
+	return m[key]
 }

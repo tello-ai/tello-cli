@@ -133,21 +133,31 @@ func (s *Server) record(w http.ResponseWriter, r *http.Request, path string) (ma
 // request, refuses it for another request, or runs the request and stores a
 // success.
 func (s *Server) idempotent(w http.ResponseWriter, r *http.Request, path string, body map[string]any, run func() (int, any)) {
-	key := r.Header.Get("Idempotency-Key")
-	request := r.Method + " " + path + " " + jsonText(body)
-	if prev, ok := s.res.byKey[key]; ok && key != "" {
-		if prev.request != request {
-			writeFailure(w, Failure{Status: 409, Code: "idempotency_key_reused"})
-			return
-		}
-		writeJSON(w, prev.status, prev.body)
+	if s.replay(w, r, path, body) {
 		return
 	}
 	status, resp := run()
-	if key != "" && status >= 200 && status <= 299 {
-		s.res.byKey[key] = stored{request: request, status: status, body: resp}
+	if key := r.Header.Get("Idempotency-Key"); key != "" && status >= 200 && status <= 299 {
+		s.res.byKey[key] = stored{request: r.Method + " " + path + " " + jsonText(body), status: status, body: resp}
 	}
 	writeJSON(w, status, resp)
+}
+
+// replay answers a request whose key was used before: the stored response
+// for the same request, idempotency_key_reused for another. It reports
+// whether it answered.
+func (s *Server) replay(w http.ResponseWriter, r *http.Request, path string, body map[string]any) bool {
+	key := r.Header.Get("Idempotency-Key")
+	prev, ok := s.res.byKey[key]
+	if !ok || key == "" {
+		return false
+	}
+	if prev.request != r.Method+" "+path+" "+jsonText(body) {
+		writeFailure(w, Failure{Status: 409, Code: "idempotency_key_reused"})
+		return true
+	}
+	writeJSON(w, prev.status, prev.body)
+	return true
 }
 
 func (s *Server) createResource(kind string, body map[string]any) (int, any) {
