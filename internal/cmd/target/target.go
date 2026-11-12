@@ -14,20 +14,20 @@ import (
 
 // NewAgent returns the `agent` command.
 func NewAgent(a *app.App) *cobra.Command {
-	return group(a, "agent", "deployed agents", "agent ids are for call create --agent",
+	return group(a, kind{res: rest.Agents, noun: "agent"}, "deployed agents", "agent ids are for call create --agent",
 		func(ctx context.Context, c *rest.Client) (rest.Object, error) { return c.ListAgents(ctx) })
 }
 
 // NewCrew returns the `crew` command.
 func NewCrew(a *app.App) *cobra.Command {
-	return group(a, "crew", "crews with an active production version", "crew ids are for call create --crew",
+	return group(a, kind{res: rest.Crews, noun: "crew"}, "crews with an active production version", "crew ids are for call create --crew",
 		func(ctx context.Context, c *rest.Client) (rest.Object, error) { return c.ListCrews(ctx) })
 }
 
-func group(a *app.App, name, what, note string, list func(context.Context, *rest.Client) (rest.Object, error)) *cobra.Command {
+func group(a *app.App, k kind, what, note string, list func(context.Context, *rest.Client) (rest.Object, error)) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   name,
-		Short: "List the " + what + " calls can use",
+		Use:   k.noun,
+		Short: "List the " + what + " calls can use, and manage " + string(k.res),
 		Args:  cobra.ArbitraryArgs,
 		RunE:  a.GroupRunE,
 	}
@@ -50,6 +50,7 @@ func group(a *app.App, name, what, note string, list func(context.Context, *rest
 			return a.WriteResult(page)
 		},
 	})
+	cmd.AddCommand(manageCommands(a, k)...)
 	return cmd
 }
 
