@@ -119,11 +119,14 @@ is a short command, so a shell timeout never ends the call.
    `callNotInProgress` (exit 75) means the call is not answered yet: go back
    to step 3.
 5. Keep polling `call get`. A successful transfer ends the AI's call
-   (`completed`); the user and the callee keep talking on their own line. If
-   the call stays `inProgress` for a minute or so, the transfer most likely
-   failed (for example the user did not pick up) and the agent is still on
-   the call: ask the user whether to try again (with a new key) or end it
-   with `tello call end <callId> --json`.
+   (`completed`); the user and the callee keep talking on their own line.
+   The call stays `inProgress` while the user's phone rings (up to 75
+   seconds) and, with `--mode warm`, while the summary is read to the user
+   (up to 30 more seconds), so do not judge the transfer before about two
+   minutes have passed since the request. If it is still `inProgress` after
+   that, the transfer most likely failed (for example the user did not pick
+   up) and the agent is still on the call: ask the user whether to try again
+   (with a new key) or end it with `tello call end <callId> --json`.
 
 Do not use `--wait` here: it blocks until the call ends, so the transfer
 could not be sent, and a shell timeout or Ctrl-C ends the call.

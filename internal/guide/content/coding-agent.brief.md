@@ -21,7 +21,7 @@ Flow (connect the callee to the user, when asked)
 1. Ask for the user's number (without an assigned outbound number it must be verified on the account). `tello call create --to +8210… --agent <id> --json` without `--wait` (it blocks until the end and a shell timeout ends the call).
 2. Poll `tello call get <callId> --json` every few seconds until `status` is `inProgress`; an ending status means nothing to transfer.
 3. `tello call transfer <callId> --to <user's number> [--mode warm --plan '{"mode":"warm-transfer-say-summary"}'] --json`; `callNotInProgress` (exit 75): back to step 2.
-4. Keep polling: `completed` = transferred (the AI left). Still `inProgress` after about a minute = the transfer failed and the agent is still talking: ask the user to retry (new key) or `tello call end`.
+4. Keep polling: `completed` = transferred (the AI left). The user's phone rings up to 75s and a warm summary takes up to 30s more, so wait about two minutes after the request; still `inProgress` then = the transfer failed and the agent is still talking: ask the user to retry (new key) or `tello call end`.
 
 Flow (review a scenario first; agents that generate outbound scenarios)
 1. `tello call draft create --agent <id> --to +8210… --instructions "…" [--var …] --json`. `status`: `pendingConfirmation` (show `preview.summary` to the user), `needsClarification` (answer `question`), `refused`, or `confirmed` (already called: `callId`). `draftNotApplicable`: use `call create`.
