@@ -4,7 +4,7 @@ Full contract: `tello guide coding-agent`.
 
 Rules
 - Calls are real and billed. Call only when the user explicitly asked for that call; never call to test. `tello call draft confirm` places a real call: confirm only after the user approved the draft's `preview.summary`.
-- The callee (`--to`, E.164 like `+821012345678`) must be a verified number of the account, else `calleeNotVerified` / `callerNotVerified` (exit 4).
+- The callee (`--to`) is E.164 like `+821012345678`. An account without an assigned outbound number (Free plan) can call only numbers verified on the account, else `calleeNotVerified` / `callerNotVerified` (exit 4); with an assigned number any callee works.
 - One call at a time. `--agent`/`--crew` creates return once accepted: use `--wait` (or poll `tello call get`) before the next call; use `tello call batch` for several.
 - A failed `--agent`/`--crew` create reports `data.idempotencyKey`; retry only with `--idempotency-key <it>`. On `callOutcomeUnknown`, regardless of exit code, check `tello call list` and ask the user; never re-dial with a new key.
 - Tool, agent and crew writes go live for the next call at once (no draft, no separate deploy). Write only what the user asked for. On `writeOutcomeUnknown` (exit 8) or a lost response, check with `get`/`list` before creating again with a new key.

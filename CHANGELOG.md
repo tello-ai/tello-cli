@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Guide, skill file, READMEs and the `calleeNotVerified`/`callerNotVerified`
+  hint now say the verified-callee rule applies only to accounts without an
+  assigned outbound number (Free plan); accounts with one can call any
+  number. `tello doctor` reports installed skill files as outdated until
+  `tello init` refreshes them.
 - Added `tello tool list|get|create|update|delete` and
   `get|create|update|delete` for `tello agent` and `tello crew` (`list`
   unchanged). `--body` takes a JSON object, `@file` or `-` for stdin; ids and

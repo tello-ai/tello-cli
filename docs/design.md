@@ -191,8 +191,9 @@ REST 발신에는 임의 생성 또는 `--idempotency-key`로 지정한 키를 �
 문의한다. `idempotencyInProgress`가 계속될 때도 목록을 확인한다. 일시 오류를
 재시도할 때는 동일한 키와 요청을 사용하고 위 저장 한계를 고려한다. 명확한 발신 전
 검증 오류는 원인을 고친 뒤 재시도할 수 있다.
-REST 멱등 키는 WS 통화에 적용되지 않는다. 실제 통화는 과금되며 수신 번호는 계정의
-인증 번호여야 한다(`calleeNotVerified` / WS `callerNotVerified`).
+REST 멱등 키는 WS 통화에 적용되지 않는다. 실제 통화는 과금된다. 발신 배정번호가 없는
+계정(Free 플랜)은 계정의 인증 수신번호로만 걸 수 있고, 배정번호가 있으면 수신 번호 제한이
+없다(VGW `services/outbound_gate.py`; 위반은 `calleeNotVerified` / WS `callerNotVerified`).
 
 ### 8.2 핸들러 프로토콜 (stdin/stdout NDJSON)
 

@@ -130,8 +130,10 @@ agent had a ready scenario and the call was already placed (`callId`).
 Agents without scenario generation answer `draftNotApplicable`: use
 `call create`.
 
-Calls are real and billed. The callee must be a verified number of your
-account (`calleeNotVerified` otherwise).
+Calls are real and billed. An account with an assigned outbound number (a
+dedicated 070 number, paid plans) can call any number; without one (Free
+plan) the callee must be a number verified on the account
+(`calleeNotVerified` otherwise).
 
 ## 4. Answer a call yourself
 
@@ -148,8 +150,8 @@ tello call create --to +821012345678 --metadata @booking.json -- python3 bot.py
 
 These calls block until they end. Ctrl-C cancels the call and waits up to
 10 s for the gateway to confirm; a second Ctrl-C exits immediately.
-`--timeout 10m` cancels a call that runs too long. Unverified callees fail
-with `callerNotVerified`.
+`--timeout 10m` cancels a call that runs too long. Without an assigned
+number, unverified callees fail with `callerNotVerified`.
 
 ### Handler protocol
 

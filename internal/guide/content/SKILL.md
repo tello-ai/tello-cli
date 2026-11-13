@@ -18,7 +18,7 @@ tello guide coding-agent --brief
 Key safety rules:
 
 - Calls are real and billed. Place a call only when the user explicitly asked for that call. `tello call draft confirm` places a real call too: confirm only a draft whose summary the user approved.
-- The callee (`--to`) must be a verified number of the account, in E.164 form (`+8210…`).
+- The callee (`--to`) is in E.164 form (`+8210…`). Without an assigned outbound number (Free plan) only numbers verified on the account can be called (`calleeNotVerified` / `callerNotVerified`, exit 4).
 - One call at a time: with `--agent`/`--crew` pass `--wait` before placing the next call. Never run calls in parallel.
 - Retry a failed create only with `--idempotency-key` set to the reported `data.idempotencyKey`; on `callOutcomeUnknown` check `tello call list` first.
 - Tool, agent and crew writes (`create`, `update`, `delete`, `crew generate`) go live for the next call at once. Make them only when the user asked; on `writeOutcomeUnknown` check with `get`/`list` before creating again.

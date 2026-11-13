@@ -130,8 +130,9 @@ tello call draft confirm cd_482     # 실제 통화 발신
 발신 결과가 불명이면 `call list`를 확인한 뒤 재시도 여부를 판단하세요.
 
 통화는 실제로 걸리고 과금됩니다. 요청받은 통화만 걸고, 다음 통화 전에 이전 통화의
-종료를 확인하세요. 수신 번호는 계정의 인증 번호여야 합니다(REST에서는
-`calleeNotVerified`, WebSocket에서는 `callerNotVerified`).
+종료를 확인하세요. 발신 배정번호(유료 플랜의 전용 070 번호)가 있는 계정은 아무
+번호로나 걸 수 있습니다. 배정번호가 없는 계정(Free 플랜)은 계정에 인증한 수신번호로만
+걸 수 있습니다(REST에서는 `calleeNotVerified`, WebSocket에서는 `callerNotVerified`).
 
 ### 응답 유실과 멱등 재시도
 

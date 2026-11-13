@@ -22,9 +22,13 @@ and `tello crew` also manage the tools, agents and crews themselves.
   and spends the account's call credit. Place a call only when the user
   explicitly asked for that call. Never place a call to "test" something;
   test handler logic offline (see "Testing a handler").
-- **The callee must be a verified number of the account.** Otherwise the call
-  is refused with `calleeNotVerified` (REST) or `callerNotVerified` (handler
-  calls), exit 4. Use E.164 form, e.g. `+821012345678`.
+- **Without an assigned number, the callee must be verified.** An account
+  with an active assigned outbound number (a dedicated 070 number, paid
+  plans) can call any number. An account without one (Free plan) can call
+  only numbers verified on the account in the portal; any other callee is
+  refused with `calleeNotVerified` (REST) or `callerNotVerified` (handler
+  calls), exit 4: tell the user, do not retry. Use E.164 form, e.g.
+  `+821012345678`.
 - **One call at a time.** The account has a limited number of concurrent
   lines. With `--agent`/`--crew`, `tello call create` returns as soon as the
   call is accepted, so pass `--wait` (or poll `tello call get`) before placing
