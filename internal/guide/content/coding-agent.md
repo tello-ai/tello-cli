@@ -42,7 +42,8 @@ and `tello crew` also manage the tools, agents and crews themselves.
   `tello call list` and ask the user before retrying.
 - **Transfer a call only when the user asked for it.** `tello call transfer`
   hands a live call, inbound calls included, to another real phone number or
-  to the agent's agent app counselors.
+  to the agent's agent app counselors. A common request is to connect the
+  callee to the user: see "Connect a call to the user".
 - **A confirmed draft is a real call.** `tello call draft confirm` dials and
   bills like `call create`. Show the draft's `preview.summary` to the user and
   confirm only what they approved. `draft create` itself calls at once when
@@ -85,6 +86,47 @@ and `tello crew` also manage the tools, agents and crews themselves.
    `transcript`, `creditCharged`.
 6. `summary`, `transcript` and `creditCharged` can still be null right after
    the call ends. Fetch again later with `tello call get <id> --json`.
+
+## Connect a call to the user
+
+When the user asks you to call someone and hand the call over to them ("call
+the restaurant and put me through"), place the call without `--wait`, wait
+for the callee to answer, then transfer to the user's own number. Each step
+is a short command, so a shell timeout never ends the call.
+
+1. Ask the user for their phone number (E.164). The transfer destination
+   passes the same check as a new call: without an assigned outbound number
+   it must be a number verified on the account.
+2. Place the call and keep the returned id:
+
+   ```sh
+   tello call create --to +821012345678 --agent 12 --json
+   ```
+
+3. Run `tello call get <callId> --json` every few seconds until `status` is
+   `inProgress` (the callee answered). An ending status (`noAnswer`,
+   `failed`, `cancelled`, `completed`) means there is nothing to transfer:
+   tell the user. `inProgress` only says the line was picked up, not that a
+   person answered; the agent talks to whoever answered until the transfer.
+4. Transfer to the user:
+
+   ```sh
+   tello call transfer <callId> --to +821098765432 --json
+   # or brief the user with a summary before connecting:
+   tello call transfer <callId> --to +821098765432 --mode warm --plan '{"mode":"warm-transfer-say-summary"}' --json
+   ```
+
+   `callNotInProgress` (exit 75) means the call is not answered yet: go back
+   to step 3.
+5. Keep polling `call get`. A successful transfer ends the AI's call
+   (`completed`); the user and the callee keep talking on their own line. If
+   the call stays `inProgress` for a minute or so, the transfer most likely
+   failed (for example the user did not pick up) and the agent is still on
+   the call: ask the user whether to try again (with a new key) or end it
+   with `tello call end <callId> --json`.
+
+Do not use `--wait` here: it blocks until the call ends, so the transfer
+could not be sent, and a shell timeout or Ctrl-C ends the call.
 
 ## Commands
 

@@ -113,6 +113,14 @@ needs `--plan`, the REST API's `transferPlan` object (a JSON object, `@file`
 or `-`); `--message` is what the customer hears before the transfer. Without
 these flags the request body is the same as in earlier versions.
 
+To connect the callee to yourself ("call them and put me through"), create
+the call without `--wait`, poll `tello call get` until it is `inProgress`,
+then `tello call transfer <callId> --to <your number>` (add `--mode warm
+--plan '{"mode":"warm-transfer-say-summary"}'` to hear a summary first). The
+destination passes the same check as a new call. `--wait` does not fit this
+flow: it blocks until the call ends. `tello guide coding-agent` has the
+step-by-step version.
+
 ### Review the scenario first (call drafts)
 
 For agents that generate outbound scenarios:

@@ -17,6 +17,12 @@ Flow (portal agent answers; default)
 4. `--wait` streams `{"type":"cli.status","callId":"c_…","status":…}`; the last line is `{"type":"cli.result","ok":…}` with the call object in `data` (`status`, `durationSeconds`, `summary`, `transcript`, `creditCharged`; may be null right after the end).
 5. Later: `tello call get <callId> --json`. Also `tello call list [--status …] [--agent …] [--created-after …] --json`, `tello call end <callId> --json`, `tello call transfer <callId> (--to <number> | --agent-app) [--mode warm --plan <JSON>] --json` (only when the user asked; accepted ≠ transferred, check with `call get`).
 
+Flow (connect the callee to the user, when asked)
+1. Ask for the user's number (without an assigned outbound number it must be verified on the account). `tello call create --to +8210… --agent <id> --json` without `--wait` (it blocks until the end and a shell timeout ends the call).
+2. Poll `tello call get <callId> --json` every few seconds until `status` is `inProgress`; an ending status means nothing to transfer.
+3. `tello call transfer <callId> --to <user's number> [--mode warm --plan '{"mode":"warm-transfer-say-summary"}'] --json`; `callNotInProgress` (exit 75): back to step 2.
+4. Keep polling: `completed` = transferred (the AI left). Still `inProgress` after about a minute = the transfer failed and the agent is still talking: ask the user to retry (new key) or `tello call end`.
+
 Flow (review a scenario first; agents that generate outbound scenarios)
 1. `tello call draft create --agent <id> --to +8210… --instructions "…" [--var …] --json`. `status`: `pendingConfirmation` (show `preview.summary` to the user), `needsClarification` (answer `question`), `refused`, or `confirmed` (already called: `callId`). `draftNotApplicable`: use `call create`.
 2. `tello call draft revise <cd_…> --request "…" --json` returns a new draft id; the old one is `draftSuperseded`.

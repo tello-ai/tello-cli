@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- The coding-agent guide and READMEs describe connecting a callee to the
+  user: create without `--wait`, poll `call get` until `inProgress`, then
+  `call transfer --to <user's number>`.
 - Guide, skill file, READMEs and the `calleeNotVerified`/`callerNotVerified`
   hint now say the verified-callee rule applies only to accounts without an
   assigned outbound number (Free plan); accounts with one can call any

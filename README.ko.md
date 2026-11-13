@@ -107,6 +107,14 @@ tello call transfer c_12345 --to +821012345678 --mode warm --plan '{"mode":"warm
 `--message`는 전환 직전 고객에게 들려줄 안내입니다. 이 플래그들이 없으면 요청
 본문은 이전 버전과 같습니다.
 
+상대에게 걸어서 나에게 연결하려면("전화 걸어서 나 바꿔 줘") `--wait` 없이 통화를
+만들고, `tello call get`으로 `inProgress`가 될 때까지 확인한 뒤
+`tello call transfer <callId> --to <내 번호>`를 보내세요. 받기 전에 요약을 들으려면
+`--mode warm --plan '{"mode":"warm-transfer-say-summary"}'`를 더하세요. 전환 대상
+번호도 새 발신과 같은 허용 판정을 거칩니다. `--wait`는 통화가 끝날 때까지
+블로킹하므로 이 흐름에 맞지 않습니다. 단계별 안내는 `tello guide coding-agent`에
+있습니다.
+
 ### 시나리오를 먼저 확인하기(통화 초안)
 
 아웃바운드 시나리오 자동 생성을 쓰는 에이전트는 걸기 전에 시나리오를 확인할 수
