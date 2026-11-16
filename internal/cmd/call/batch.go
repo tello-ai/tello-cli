@@ -60,18 +60,19 @@ func newBatch(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "batch --tasks <file|-> (--agent <id> | --crew <id> | -i | -- <handler command>...) [flags]",
 		Short: "Place several calls one after another",
-		Long: `Place several calls one after another; each call ends before the next
+		Long: `Place several calls one after another. Each call ends before the next one
 starts.
 
 --agent / --crew   A portal agent or crew answers every call (REST API).
-                   Tasks: [{"to":"+8210…","variables":{…}}]. Each task has its
-                   own idempotency key, reused on retries.
--i / -- <command>  You or a handler answer (WebSocket gateway), each call on a
-                   new connection with a new handler process.
+                   Tasks: [{"to":"+8210…","variables":{…}}]. Each task gets
+                   its own idempotency key, which its retries reuse.
+-i / -- <command>  You or a handler answer (WebSocket gateway). Each call uses
+                   a new connection and, with a handler, a new process.
                    Tasks: [{"to":"+8210…","prompt":"…","metadata":{…}}].
 
---tasks is the JSON array file, or - for stdin. Temporary refusals are
-retried; account-wide refusals stop the batch.`,
+--tasks takes a file holding the JSON array, or - for stdin. Temporary
+refusals are retried; a refusal that applies to the whole account stops the
+batch.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var (
@@ -127,10 +128,10 @@ retried; account-wide refusals stop the batch.`,
 	f := cmd.Flags()
 	f.StringVar(&o.tasksArg, "tasks", "", "JSON array of tasks: a file path, or - for stdin")
 	o.target.bind(f)
-	f.IntVar(&o.maxRetries, "max-retries", o.maxRetries, "retries per task for temporary refusals")
-	f.DurationVar(&o.retryDelay, "retry-delay", o.retryDelay, "first retry delay, doubled on each retry")
+	f.IntVar(&o.maxRetries, "max-retries", o.maxRetries, "retries per task after a temporary refusal")
+	f.DurationVar(&o.retryDelay, "retry-delay", o.retryDelay, "delay before the first retry, doubled on each retry")
 	f.DurationVar(&o.timeout, "timeout", 0, "end each call after this long (0 = no limit)")
-	f.BoolVarP(&o.interactive, "interactive", "i", false, "answer from the terminal")
+	f.BoolVarP(&o.interactive, "interactive", "i", false, "answer every call from the terminal")
 	return cmd
 }
 

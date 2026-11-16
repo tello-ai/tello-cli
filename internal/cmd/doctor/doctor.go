@@ -52,7 +52,7 @@ type report struct {
 func New(a *app.App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check version, API key, API and gateway URLs, authentication and skill files",
+		Short: "Check the version, API key, URLs, authentication and skill files",
 		Args:  app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			checks := runChecks(cmd.Context(), a)

@@ -27,20 +27,21 @@ func newCreate(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create --to <number> (--agent <id> | --crew <id> | -i | -- <handler command>...) [flags]",
 		Short: "Place one call",
-		Long: `Place one call. Who answers the callee decides how it runs:
+		Long: `Place one call. Who answers the callee decides how the call runs:
 
 --agent / --crew   A portal agent or crew answers (REST API). The command
-                   returns once the call is accepted; --wait follows it to the
-                   end. --var passes start variables. Reuse the same
-                   --idempotency-key on retries; check unknown outcomes first.
-                   --max-duration-seconds applies to both; --instructions,
-                   --ivr-goal, --ivr-opening-message and --notify-on-end to
-                   --agent only. They change this call, not the agent.
--i                 You answer from the terminal (WebSocket gateway). Blocks
-                   until the call ends.
--- <command>...    A handler program answers: it reads gateway frames as NDJSON
-                   on stdin and prints answer, sendDtmf or cancel commands on
-                   stdout. Blocks until the call ends.`,
+                   returns as soon as the call is accepted; add --wait to
+                   follow it to the end. --var fills the start variables.
+                   --max-duration-seconds works with both. --instructions,
+                   --ivr-goal, --ivr-opening-message and --notify-on-end work
+                   with --agent only and change this call, not the agent.
+                   On a retry reuse the same --idempotency-key, and when the
+                   outcome is unknown check whether the call was placed first.
+-i                 You answer from the terminal (WebSocket gateway). The
+                   command blocks until the call ends.
+-- <command>...    A handler program answers. It reads gateway frames as
+                   NDJSON on stdin and writes answer, sendDtmf or cancel
+                   commands to stdout. The command blocks until the call ends.`,
 		Example: `  tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
   tello call create --to +821012345678 --agent 12 --instructions "내일 2시 예약을 확인해 주세요" --notify-on-end
   tello call create --to +821012345678 --prompt "Confirm the booking" -i
@@ -106,16 +107,16 @@ func newCreate(a *app.App) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&to, "to", "", "phone number to call (E.164, e.g. +821012345678)")
+	f.StringVar(&to, "to", "", "phone number to call, in E.164 form (e.g. +821012345678)")
 	tgt.bind(f)
 	pc.bind(f)
-	f.StringArrayVar(&vars, "var", nil, "start variable name=value for --agent/--crew (repeatable)")
+	f.StringArrayVar(&vars, "var", nil, "with --agent/--crew: start variable as name=value (repeatable)")
 	f.BoolVar(&wait, "wait", false, "with --agent/--crew: follow the call until it ends")
-	f.StringVar(&idempotencyKey, "idempotency-key", "", "with --agent/--crew: key that makes retries safe (default: random)")
+	f.StringVar(&idempotencyKey, "idempotency-key", "", "with --agent/--crew: key that makes a retry safe; random if omitted")
 	f.StringVar(&prompt, "prompt", "", "with -i or a handler: instructions for the agent on this call")
 	f.StringVar(&metadataArg, "metadata", "", "with -i or a handler: JSON object, or @file holding one, attached to the call")
-	f.DurationVar(&timeout, "timeout", 0, "end the call after this long (0 = no limit); --agent/--crew need --wait")
-	f.BoolVarP(&interactive, "interactive", "i", false, "answer from the terminal")
+	f.DurationVar(&timeout, "timeout", 0, "end the call after this long (0 = no limit); with --agent/--crew it needs --wait")
+	f.BoolVarP(&interactive, "interactive", "i", false, "answer the call from the terminal")
 	return cmd
 }
 

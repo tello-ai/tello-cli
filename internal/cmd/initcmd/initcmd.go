@@ -32,7 +32,11 @@ func New(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create or refresh the coding-agent skill files",
-		Args:  app.NoArgs,
+		Long: `Write the skill files that teach coding agents to use this CLI into the
+project directory: .claude/skills/tello/SKILL.md for Claude and
+.codex/skills/tello/SKILL.md for Codex. Run it again after upgrading the CLI;
+each file is reported as created, updated or unchanged.`,
+		Args: app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			selected, err := validTargets(targets)
 			if err != nil {
@@ -56,8 +60,8 @@ func New(a *app.App) *cobra.Command {
 			return a.WriteResult(map[string]any{"files": files})
 		},
 	}
-	cmd.Flags().StringSliceVar(&targets, "target", guide.SkillTargets(), "coding agents to install skill files for ("+strings.Join(guide.SkillTargets(), ", ")+")")
-	cmd.Flags().StringVar(&dir, "dir", "", "project directory (default: current directory)")
+	cmd.Flags().StringSliceVar(&targets, "target", guide.SkillTargets(), "coding agents to write skill files for ("+strings.Join(guide.SkillTargets(), ", ")+")")
+	cmd.Flags().StringVar(&dir, "dir", "", "project directory; the current directory if omitted")
 	return cmd
 }
 

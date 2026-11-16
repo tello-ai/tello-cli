@@ -28,8 +28,8 @@ type target struct {
 }
 
 func (t *target) bind(f *pflag.FlagSet) {
-	f.StringVar(&t.agent, "agent", "", "agent id (tello agent list); the portal agent answers the call")
-	f.StringVar(&t.crew, "crew", "", "crew id (tello crew list); the portal crew answers the call")
+	f.StringVar(&t.agent, "agent", "", "agent id (see tello agent list); the portal agent answers")
+	f.StringVar(&t.crew, "crew", "", "crew id (see tello crew list); the portal crew answers")
 	f.DurationVar(&t.pollInterval, "poll-interval", 2*time.Second, "how often to check the call while waiting")
 }
 
@@ -61,9 +61,9 @@ type perCall struct {
 
 func (p *perCall) bind(f *pflag.FlagSet) {
 	f.StringVar(&p.Instructions, "instructions", "", "--agent only: goal of this call, up to 2000 characters")
-	f.IntVar(&p.MaxDurationSeconds, "max-duration-seconds", 0, "maximum call length in seconds, 30 to 1800 (default: the service's)")
+	f.IntVar(&p.MaxDurationSeconds, "max-duration-seconds", 0, "maximum call length in seconds, 30 to 1800; the service's limit if omitted")
 	f.StringVar(&p.ivrGoal, "ivr-goal", "", "--agent only: where to go when a phone menu answers, e.g. 상담원 연결 (up to 200 characters)")
-	f.StringVar(&p.openingMessage, "ivr-opening-message", "", "--agent only: first sentence once the callee answers (up to 200 characters)")
+	f.StringVar(&p.openingMessage, "ivr-opening-message", "", "--agent only: first sentence after the callee answers (up to 200 characters)")
 	f.BoolVar(&p.NotifyOnEnd, "notify-on-end", false, "--agent only: text the account's notification number when the call ends")
 }
 
