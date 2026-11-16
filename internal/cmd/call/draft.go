@@ -102,8 +102,9 @@ func newDraftRevise(a *app.App) *cobra.Command {
 		Use:   "revise <draftId> --request <text> [--idempotency-key <key>]",
 		Short: "Ask for a changed scenario; returns a new draft",
 		Long: `Ask for a changed scenario. A new draft with a new id comes back, and the
-revised draft can no longer be confirmed (draftSuperseded). A draft can be
-revised up to 5 times (draftRevisionLimit). If the answer is
+revised draft can no longer be confirmed (draftSuperseded). Drafts go up to
+the 5th revision, the first draft being the 1st (draftRevisionLimit after
+that); revisionsLeft says how many remain. If the answer is
 needsClarification, the draft stays as it was.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
