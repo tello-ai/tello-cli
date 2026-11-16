@@ -56,6 +56,6 @@ func newTopic(a *app.App, topic string) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&brief, "brief", false, "print the compact version")
+	cmd.Flags().BoolVar(&brief, "brief", false, "print the short version")
 	return cmd
 }

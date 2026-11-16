@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Reworded the help of every command and flag. `tello agent` help no longer
+  says "a agent"; `agent update` and `crew update` explain `webhookUrl` (call
+  event webhooks, signing key issued in the portal) with examples; `delete`
+  help names the refusals (`agentInUse`, `crewInUse`, `toolInUse`,
+  `defaultToolProtected`); `auth login` and `init` gained a description, and
+  get, create, update, delete, `call get|end|list` and `crew generation`
+  gained examples.
 - The coding-agent guide and READMEs describe connecting a callee to the
   user: create without `--wait`, poll `call get` until `inProgress`, then
   `call transfer --to <user's number>`.

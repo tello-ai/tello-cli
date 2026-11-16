@@ -26,19 +26,20 @@ func newGenerate(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate --goal <text> [--wait] [--poll-interval 2s] [--timeout <dur>] [--idempotency-key <key>]",
 		Short: "Have Tello build a crew from a goal and put it live",
-		Long: `Have Tello design a crew for a business goal, then save, deploy and publish it.
-This takes tens of seconds to minutes, so the result is a job: without --wait
-the command returns it as accepted; follow it with tello crew generation <id>.
---wait polls the job until it ends and returns it, with the crew on success.
+		Long: `Have Tello design a crew for a business goal, then save, deploy and publish
+it. This takes tens of seconds to minutes, so the result is a job. Without
+--wait the command returns the accepted job; follow it with
+tello crew generation <id>. With --wait it polls the job until it ends and
+returns it, with the crew on success.
 
-The account builds one crew at a time. Another goal while a job runs is
-crewGenerationInProgress (data.id is that job). The same goal while it runs,
-or within 10 minutes of its success, returns that job instead of building a
-second crew; change the wording to build another one.
+The account builds one crew at a time: another goal while a job runs is
+refused with crewGenerationInProgress (data.id is the running job). The same
+goal while its job runs, or within 10 minutes of its success, returns that
+job instead of building a second crew; reword the goal to build another one.
 
 A failed job exits with its error.code (crewGenerationFailed,
 crewGenerationTimeout, crewDeployFailed, crewPromoteFailed); when data.crew is
-set the crew was left in place. --timeout and Ctrl-C stop waiting only: the
+set, the crew was left in place. --timeout and Ctrl-C only stop waiting: the
 job keeps running.`,
 		Example: `  tello crew generate --goal "치과 예약 고객에게 전화해 내일 예약을 확인한다" --wait`,
 		Args:    app.NoArgs,
@@ -88,15 +89,16 @@ job keeps running.`,
 	f.BoolVar(&wait, "wait", false, "follow the job until it ends")
 	f.DurationVar(&interval, "poll-interval", 2*time.Second, "how often to check the job while waiting")
 	f.DurationVar(&timeout, "timeout", 0, "stop waiting after this long (0 = no limit); needs --wait")
-	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
+	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe; random if omitted")
 	return cmd
 }
 
 func newGeneration(a *app.App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "generation <generationId>",
-		Short: "Show a crew generation job: status, crew or error",
-		Args:  cobra.ArbitraryArgs,
+		Use:     "generation <generationId>",
+		Short:   "Show a crew generation job: status, crew or error",
+		Example: "  tello crew generation 57",
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneID(args, "generationId")
 			if err != nil {

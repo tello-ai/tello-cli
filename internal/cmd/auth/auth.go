@@ -42,8 +42,14 @@ func newLogin(a *app.App) *cobra.Command {
 	var noVerify bool
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Store an API key (prompted on a terminal, else the first line of stdin)",
-		Args:  app.NoArgs,
+		Short: "Store an API key",
+		Long: `Store an API key. On a terminal the key is read from a hidden prompt;
+otherwise it is the first line of stdin. The key is checked against the API
+before it is saved, so a rejected key never replaces a working one;
+--no-verify skips the check.`,
+		Example: `  tello auth login
+  tello auth login < key.txt`,
+		Args: app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key, err := readKey(cmd.Context(), a)
 			if err != nil {
@@ -83,7 +89,7 @@ func newLogin(a *app.App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&noVerify, "no-verify", false, "save without checking the key against the API")
+	cmd.Flags().BoolVar(&noVerify, "no-verify", false, "save the key without checking it against the API")
 	return cmd
 }
 
@@ -176,7 +182,7 @@ func newStatus(a *app.App) *cobra.Command {
 			return a.WriteResult(data)
 		},
 	}
-	cmd.Flags().BoolVar(&offline, "offline", false, "only resolve the key; do not contact the API")
+	cmd.Flags().BoolVar(&offline, "offline", false, "only find the key; do not contact the API")
 	return cmd
 }
 

@@ -21,13 +21,18 @@ import (
 func NewRootCmd(a *app.App) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "tello",
-		Short: "Place and follow Tello phone calls from the terminal",
-		Long: `tello places phone calls through Tello. A portal agent or crew can answer
-them (--agent / --crew, REST API), or you, a program or a coding agent can
-answer each turn in real time (-i / a handler, WebSocket gateway).
+		Short: "Place Tello phone calls from the terminal and follow them",
+		Long: `tello places outbound phone calls through Tello. Choose who answers the
+callee:
 
-Every command supports --json: stdout becomes one JSON object per line and the
-last line is always {"type":"cli.result",...}. Exit codes are listed by
+  --agent / --crew    a portal agent or crew runs the conversation (REST API)
+  -i / -- <command>   you, a program or a coding agent answer each turn in
+                      real time (WebSocket gateway)
+
+tello also manages the tools, agents and crews those calls use.
+
+Every command accepts --json: stdout becomes NDJSON, one object per line, and
+the last line is always {"type":"cli.result",...}. Exit codes are listed in
 ` + "`tello guide coding-agent`" + `.`,
 		Version:       version.Version,
 		Args:          cobra.ArbitraryArgs,
@@ -44,9 +49,9 @@ last line is always {"type":"cli.result",...}. Exit codes are listed by
 		return app.Usagef("%v", err)
 	})
 	flags := root.PersistentFlags()
-	flags.BoolVar(&a.JSON, "json", false, `write NDJSON to stdout; the last line is {"type":"cli.result",...}`)
-	flags.StringVar(&a.URL, "url", "", "WebSocket gateway for -i/handler calls (default $TELLO_URL, then wss://api.telloai.io/sdk)")
-	flags.StringVar(&a.APIURL, "api-url", "", "REST API base (default $"+app.EnvAPIURL+", then "+app.DefaultAPIURL+")")
+	flags.BoolVar(&a.JSON, "json", false, `print NDJSON to stdout; the last line is {"type":"cli.result",...}`)
+	flags.StringVar(&a.URL, "url", "", "WebSocket gateway for -i and handler calls (default $TELLO_URL, then wss://api.telloai.io/sdk)")
+	flags.StringVar(&a.APIURL, "api-url", "", "REST API base URL (default $"+app.EnvAPIURL+", then "+app.DefaultAPIURL+")")
 
 	root.AddCommand(
 		target.NewAgent(a),

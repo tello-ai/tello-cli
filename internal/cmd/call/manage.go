@@ -32,10 +32,11 @@ func newGet(a *app.App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <callId>",
 		Short: "Show a call: status, timing, summary, transcript and credit",
-		Long: `Show a call of this account, live or ended, by its c_<digits> id.
-summary, transcript and creditCharged may still be null right after a call
-ends; use status to tell whether it is over.`,
-		Args: cobra.ArbitraryArgs,
+		Long: `Show a call of this account, live or ended, by its id (c_<digits>).
+Right after a call ends, summary, transcript and creditCharged can still be
+null; use status to tell whether the call is over.`,
+		Example: "  tello call get c_12345",
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneCallID(args)
 			if err != nil {
@@ -61,9 +62,11 @@ func newEnd(a *app.App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "end <callId>",
 		Short: "Ask the service to end a live call",
-		Long: `Ask the service to end a live call (source api, a2a or sdk). The result is
-the call when the request was accepted; check the outcome with tello call get.`,
-		Args: cobra.ArbitraryArgs,
+		Long: `Ask the service to end a live call placed through the API, A2A or the SDK
+(source api, a2a or sdk). The result is the call once the request is accepted,
+not the outcome; check the outcome with tello call get.`,
+		Example: "  tello call end c_12345",
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneCallID(args)
 			if err != nil {
@@ -92,30 +95,32 @@ func newTransfer(a *app.App) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "transfer <callId> (--to <number> | --agent-app) [--mode cold|warm] [--plan <JSON|@file|->] [--message <text>] [--idempotency-key <key>]",
-		Short: "Ask the service to transfer a live call to a phone number or agent app counselors",
+		Short: "Ask the service to transfer a live call to a number or the agent app",
 		Long: `Ask the service to transfer a live call of this account to a phone number
 (--to) or to the agent app counselors of the call's agent (--agent-app). Any
 answered call can be transferred, inbound calls included.
 
---mode cold (default) connects at once. --mode warm, phone numbers only,
-briefs the person who answers first and needs --plan, the transferPlan object
-of the REST API, e.g. {"mode":"warm-transfer-say-summary"}. A cold phone
-transfer takes --plan only for {"mode":"blind-transfer-add-summary-to-sip-header"}.
---message is said to the customer before the transfer.
+--mode cold (the default) connects at once. --mode warm works with phone
+numbers only: it briefs the person who answers before connecting and needs
+--plan, the transferPlan object of the REST API, e.g.
+{"mode":"warm-transfer-say-summary"}. A cold phone transfer takes --plan only
+as {"mode":"blind-transfer-add-summary-to-sip-header"}. --message is what the
+customer hears before the transfer.
 
-The result is the call when the request was accepted, not the outcome: the
+The result is the call once the request is accepted, not the outcome. The
 call stays inProgress while the number is dialed and also when the transfer
-fails (it is transferring while agent app counselors are called). Once it
-succeeds the AI leaves and a phone call ends; a browser call (web call) can
-stay inProgress until that conversation ends. Check it with tello call get.
+fails; it is transferring while agent app counselors are being called. When
+the transfer succeeds the AI leaves and a phone call ends; a browser call
+(web call) can stay inProgress until that conversation ends. Check the
+outcome with tello call get.
 
-Accepted is not done: a request sent while the call is ending, while another
-transfer is still running, or after a counselor took the call over is
-accepted but has no effect. Before trying again, give the previous transfer
-time to finish.
+Accepted does not mean done. A request sent while the call is ending, while
+another transfer is still running, or after a counselor has taken over the
+call is accepted but has no effect. Give the previous transfer time to finish
+before trying again.
 
-Each run uses a new idempotency key unless --idempotency-key is given. Reuse
-a key only to resend a request whose response was lost; resending an accepted
+Each run uses a new idempotency key unless --idempotency-key is given. Reuse a
+key only to resend a request whose response was lost: resending an accepted
 request with its key only replays the acceptance, so a new attempt after a
 failed transfer needs a new key.`,
 		Example: `  tello call transfer c_12345 --to +821012345678
@@ -189,8 +194,8 @@ failed transfer needs a new key.`,
 	f.BoolVar(&agentApp, "agent-app", false, "transfer to the agent app counselors of the call's agent instead of a number")
 	f.StringVar(&mode, "mode", "cold", "cold (connect at once) or warm (brief the person who answers first; needs --plan)")
 	f.StringVar(&planArg, "plan", "", "transferPlan as a JSON object, @file holding one, or - for stdin")
-	f.StringVar(&message, "message", "", "what to tell the customer before the transfer (default: the service's)")
-	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
+	f.StringVar(&message, "message", "", "what the customer hears before the transfer; the service's message if omitted")
+	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe; random if omitted")
 	return cmd
 }
 
@@ -199,11 +204,12 @@ func newList(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [flags]",
 		Short: "List calls of this account, newest first",
-		Long: `List calls of this account, newest first, one page at a time. Pass the
-printed next cursor as --cursor, keeping the other filters, for the next page.
---created-after/--created-before take a date (UTC midnight) or a time with a
-zone, e.g. 2026-10-20T09:00:00+09:00.`,
-		Args: app.NoArgs,
+		Long: `List calls of this account, newest first, one page at a time. For the next
+page, pass the printed next cursor as --cursor and keep the other filters.
+--created-after and --created-before take a date (midnight UTC) or a time
+with a zone, e.g. 2026-10-20T09:00:00+09:00.`,
+		Example: `  tello call list --status completed --agent 12 --created-after 2026-10-20`,
+		Args:    app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if q.Limit < 0 {
 				return app.Usagef("--limit must not be negative")
@@ -223,7 +229,7 @@ zone, e.g. 2026-10-20T09:00:00+09:00.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&q.Status, "status", "", "dialing, inProgress, transferring, completed, noAnswer, failed or cancelled")
+	f.StringVar(&q.Status, "status", "", "only calls in this status: dialing, inProgress, transferring, completed, noAnswer, failed or cancelled")
 	f.StringVar(&q.AgentID, "agent", "", "only calls of this agent id")
 	f.StringVar(&q.CrewID, "crew", "", "only calls of this crew id")
 	f.StringVar(&q.CreatedAfter, "created-after", "", "only calls created at or after this time")

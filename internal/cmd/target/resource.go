@@ -13,16 +13,29 @@ import (
 	"github.com/tello-ai/tello-cli/internal/rest"
 )
 
-// kind names a managed collection in commands and messages.
+// kind names a managed collection in commands, help and messages.
 type kind struct {
 	res  rest.Resource
 	noun string // "tool", "agent" or "crew"
+	an   string // noun with its article for help: "a tool", "an agent"
+	// id used in help examples
+	exampleID string
+	// extra help paragraphs and examples; empty means none
+	updateNote    string
+	updateExample string
+	deleteNote    string
 }
 
 // writeNote is shared by the help of every write: the API deploys and
 // publishes in the same request.
-const writeNote = `The change goes live at once: the next call uses it. There is no draft or
-separate deploy step.`
+const writeNote = `The change goes live at once: the next call uses it. There is no draft and
+no separate deploy step.`
+
+// webhookNote is the update help of agents and crews, which carry webhookUrl.
+const webhookNote = `webhookUrl is the https address that receives the call events of this %s's
+calls (call.ringing, call.started, call.transfer_started, call.ended); send
+null to remove it. Saving one needs the account's webhook signing key, issued
+once in the portal's developer settings.`
 
 // manageCommands returns get, create, update and delete for k.
 func manageCommands(a *app.App, k kind) []*cobra.Command {
@@ -31,9 +44,10 @@ func manageCommands(a *app.App, k kind) []*cobra.Command {
 
 func newGet(a *app.App, k kind) *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <" + k.noun + "Id>",
-		Short: "Show a " + k.noun + " with all its settings",
-		Args:  cobra.ArbitraryArgs,
+		Use:     "get <" + k.noun + "Id>",
+		Short:   "Show " + k.an + " with all its settings",
+		Example: "  tello " + k.noun + " get " + k.exampleID,
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneID(args, k.noun+"Id")
 			if err != nil {
@@ -59,13 +73,14 @@ func newCreate(a *app.App, k kind) *cobra.Command {
 	var bodyArg, key string
 	cmd := &cobra.Command{
 		Use:   "create --body <JSON|@file|-> [--idempotency-key <key>]",
-		Short: "Create a " + k.noun + " and put it live",
-		Long: "Create a " + k.noun + " from a JSON object (see the REST API docs for its fields).\n" + writeNote + `
+		Short: "Create " + k.an + " and put it live",
+		Long: "Create " + k.an + " from a JSON object; the REST API docs list its fields.\n\n" + writeNote + `
 
 Each run uses a new idempotency key unless --idempotency-key is given. If the
 outcome is unknown (writeOutcomeUnknown, a lost response, Ctrl-C), check the
-list before creating again; resend only with the reported key.`,
-		Args: app.NoArgs,
+list before creating again, and resend only with the reported key.`,
+		Example: "  tello " + k.noun + " create --body @" + k.noun + ".json",
+		Args:    app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := requiredBody(a, cmd, bodyArg)
 			if err != nil {
@@ -99,7 +114,7 @@ list before creating again; resend only with the reported key.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&bodyArg, "body", "", "the "+k.noun+" as a JSON object, @file holding one, or - for stdin")
-	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same create safe (default: random)")
+	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same create safe; random if omitted")
 	return cmd
 }
 
@@ -107,9 +122,13 @@ func newUpdate(a *app.App, k kind) *cobra.Command {
 	var bodyArg string
 	cmd := &cobra.Command{
 		Use:   "update <" + k.noun + "Id> --body <JSON|@file|->",
-		Short: "Change fields of a " + k.noun + " and put it live",
-		Long:  "Change only the fields in the JSON object; lists and nested settings the\nAPI replaces whole are replaced whole.\n" + writeNote,
-		Args:  cobra.ArbitraryArgs,
+		Short: "Change fields of " + k.an + " and put it live",
+		Long: `Change only the fields in the JSON object. A list or nested setting that the
+API replaces as a whole is replaced as a whole.
+
+` + writeNote + paragraph(k.updateNote),
+		Example: k.updateExample,
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneID(args, k.noun+"Id")
 			if err != nil {
@@ -133,15 +152,17 @@ func newUpdate(a *app.App, k kind) *cobra.Command {
 			return a.WriteResult(obj)
 		},
 	}
-	cmd.Flags().StringVar(&bodyArg, "body", "", "fields to change as a JSON object, @file holding one, or - for stdin")
+	cmd.Flags().StringVar(&bodyArg, "body", "", "the fields to change as a JSON object, @file holding one, or - for stdin")
 	return cmd
 }
 
 func newDelete(a *app.App, k kind) *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete <" + k.noun + "Id>",
-		Short: "Delete a " + k.noun,
-		Args:  cobra.ArbitraryArgs,
+		Use:     "delete <" + k.noun + "Id>",
+		Short:   "Delete " + k.an,
+		Long:    "Delete " + k.an + "." + paragraph(k.deleteNote),
+		Example: "  tello " + k.noun + " delete " + k.exampleID,
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneID(args, k.noun+"Id")
 			if err != nil {
@@ -160,6 +181,14 @@ func newDelete(a *app.App, k kind) *cobra.Command {
 			return a.WriteResult(map[string]any{"id": id, "deleted": true})
 		},
 	}
+}
+
+// paragraph returns s as a help paragraph after a blank line, or "" for "".
+func paragraph(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "\n\n" + s
 }
 
 // oneID returns the single <name> argument: a resource id as the API prints

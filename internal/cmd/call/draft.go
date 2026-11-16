@@ -16,11 +16,12 @@ func newDraft(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "draft",
 		Short: "Review an agent's call scenario before placing the call",
-		Long: `For agents that generate outbound scenarios: create a draft, show its
-preview.summary to a person, revise it if needed, then confirm it to place
-the call. Confirming places a real, billed call. Drafts expire 10 minutes
-after they are created, and an agent with a ready scenario is called at once
-by create (status confirmed, callId).`,
+		Long: `For agents that generate outbound scenarios. Create a draft, show its
+preview.summary to a person, revise it if needed, then confirm it to place the
+call. Confirming places a real, billed call.
+
+Drafts expire 10 minutes after they are created. If the agent already has a
+ready scenario, create places the call at once (status confirmed, with callId).`,
 		Args: cobra.ArbitraryArgs,
 		RunE: a.GroupRunE,
 	}
@@ -38,14 +39,15 @@ func newDraftCreate(a *app.App) *cobra.Command {
 		Use:   "create --agent <id> --to <number> [--instructions <goal>] [--var name=value]... [flags]",
 		Short: "Create a call draft: the scenario to review before calling",
 		Long: `Create a call draft for an agent that generates outbound scenarios. The
-number, variables and settings are stored with the draft; confirm does not
-take them again.
+number, variables and per-call settings are stored with the draft, so confirm
+does not take them again.
 
-status pendingConfirmation: show preview.summary, then confirm or revise.
-status needsClarification: answer question in --instructions and create again.
-status refused: the AI cannot handle the request; change it.
-status confirmed: the agent had a ready scenario and the call was placed at
-once; follow callId with tello call get.
+The status of the draft says what to do next:
+  pendingConfirmation  show preview.summary, then confirm or revise the draft
+  needsClarification   answer the question in --instructions and create again
+  refused              the AI cannot handle the request; change the request
+  confirmed            the agent had a ready scenario and the call was placed
+                       at once; follow callId with tello call get
 
 draftNotApplicable means the agent does not use drafts: place the call with
 tello call create and the same values.`,
@@ -86,11 +88,11 @@ tello call create and the same values.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&agent, "agent", "", "agent id (tello agent list) that generates outbound scenarios")
-	f.StringVar(&to, "to", "", "phone number to call (E.164, e.g. +821012345678)")
-	f.StringArrayVar(&vars, "var", nil, "start variable name=value (repeatable)")
+	f.StringVar(&agent, "agent", "", "id of an agent that generates outbound scenarios (see tello agent list)")
+	f.StringVar(&to, "to", "", "phone number to call, in E.164 form (e.g. +821012345678)")
+	f.StringArrayVar(&vars, "var", nil, "start variable as name=value (repeatable)")
 	pc.bind(f)
-	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
+	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe; random if omitted")
 	return cmd
 }
 
@@ -99,10 +101,10 @@ func newDraftRevise(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "revise <draftId> --request <text> [--idempotency-key <key>]",
 		Short: "Ask for a changed scenario; returns a new draft",
-		Long: `Ask for a changed scenario. A new draft with a new id comes back and the
-revised one can no longer be confirmed (draftSuperseded). Drafts go up to the
-5th revision (draftRevisionLimit). If the answer is needsClarification, the
-draft is unchanged.`,
+		Long: `Ask for a changed scenario. A new draft with a new id comes back, and the
+revised draft can no longer be confirmed (draftSuperseded). A draft can be
+revised up to 5 times (draftRevisionLimit). If the answer is
+needsClarification, the draft stays as it was.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneDraftID(args)
@@ -133,7 +135,7 @@ draft is unchanged.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&request, "request", "", "what to change, 1 to 1000 characters")
-	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe (default: random)")
+	f.StringVar(&key, "idempotency-key", "", "key that makes resending the same request safe; random if omitted")
 	return cmd
 }
 
@@ -143,13 +145,14 @@ func newDraftConfirm(a *app.App) *cobra.Command {
 		Use:   "confirm <draftId> [--idempotency-key <key>]",
 		Short: "Place the call of a draft (a real, billed call)",
 		Long: `Place the call of a draft with the values stored in it. This dials a real,
-billed call; confirm only what a person approved. A draft is confirmed once:
-again is draftAlreadyConfirmed with data.callId. The result is the call when
-accepted; follow it with tello call get.
+billed call: confirm only what a person approved. A draft can be confirmed
+once; confirming it again returns draftAlreadyConfirmed with data.callId.
+The result is the call once it is accepted; follow it with tello call get.
 
 Each run uses a new idempotency key unless --idempotency-key is given. If the
 response is lost (connection error, Ctrl-C, callOutcomeUnknown), resend only
-with the reported key: the same key replays the placed call.`,
+with the reported key: the same key returns the call already placed instead
+of dialing again.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := oneDraftID(args)
@@ -182,7 +185,7 @@ with the reported key: the same key replays the placed call.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&key, "idempotency-key", "", "key that makes resending the same confirm safe (default: random)")
+	cmd.Flags().StringVar(&key, "idempotency-key", "", "key that makes resending the same confirm safe; random if omitted")
 	return cmd
 }
 

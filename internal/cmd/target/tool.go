@@ -16,7 +16,13 @@ func NewTool(a *app.App) *cobra.Command {
 		RunE:  a.GroupRunE,
 	}
 	cmd.AddCommand(newToolList(a))
-	cmd.AddCommand(manageCommands(a, kind{res: rest.Tools, noun: "tool"})...)
+	cmd.AddCommand(manageCommands(a, kind{
+		res: rest.Tools, noun: "tool", an: "a tool", exampleID: "41",
+		updateExample: `  tello tool update 41 --body '{"description":"Look up a booking by phone number"}'`,
+		deleteNote: `The account's default tools cannot be deleted (defaultToolProtected), and a
+tool that a scenario still uses is refused with toolInUse; remove it from the
+scenario first.`,
+	})...)
 	return cmd
 }
 
@@ -25,8 +31,8 @@ func newToolList(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [--limit n] [--cursor c]",
 		Short: "List the tools of this account by id, one page at a time",
-		Long: `List the tools of this account by ascending id, one page at a time. Pass the
-printed next cursor as --cursor for the next page.`,
+		Long: `List the tools of this account by ascending id, one page at a time. For the
+next page, pass the printed next cursor as --cursor.`,
 		Args: app.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if q.Limit < 0 {
