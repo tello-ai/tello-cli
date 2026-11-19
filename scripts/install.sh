@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/tello-ai/tello-cli/main/scripts/install.sh | sh
 #
 # Environment:
-#   TELLO_VERSION            version to install, e.g. 0.1.0 (default: latest release)
+#   TELLO_VERSION            version to install, e.g. 0.2.0 (default: latest release)
 #   TELLO_INSTALL_DIR        directory for the tello binary (default: $HOME/.local/bin)
 #   TELLO_DOWNLOAD_BASE_URL  releases URL (default: https://github.com/tello-ai/tello-cli/releases)
 #                            Archives are fetched from <base>/download/v<version>/.

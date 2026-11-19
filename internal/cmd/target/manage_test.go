@@ -1,6 +1,7 @@
 package target_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -100,6 +101,28 @@ func TestAgentAndCrewUsageErrors(t *testing.T) {
 					t.Fatalf("requests sent: %+v", reqs)
 				}
 			})
+		}
+	}
+}
+
+// The webhook help follows the API: events are not signed, and the
+// authentication header lives in the portal's webhook tab.
+func TestWebhookUpdateHelp(t *testing.T) {
+	t.Parallel()
+	for _, newCmd := range []func(*app.App) *cobra.Command{target.NewAgent, target.NewCrew} {
+		cmd := newCmd(&app.App{})
+		update, _, err := cmd.Find([]string{"update"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		long := update.Long
+		for _, want := range []string{"webhookUrl", "authentication header", "portal's webhook", "not signed"} {
+			if !strings.Contains(long, want) {
+				t.Errorf("%s update help lacks %q:\n%s", cmd.Name(), want, long)
+			}
+		}
+		if strings.Contains(strings.ToLower(long), "signing key") {
+			t.Errorf("%s update help still mentions a signing key:\n%s", cmd.Name(), long)
 		}
 	}
 }

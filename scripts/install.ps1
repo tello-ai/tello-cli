@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/tello-ai/tello-cli/main/scripts/install.ps1 | iex
 #
 # Environment:
-#   TELLO_VERSION            version to install, e.g. 0.1.0 (default: latest release)
+#   TELLO_VERSION            version to install, e.g. 0.2.0 (default: latest release)
 #   TELLO_INSTALL_DIR        directory for tello.exe (default: %LOCALAPPDATA%\Programs\tello)
 #   TELLO_DOWNLOAD_BASE_URL  releases URL (default: https://github.com/tello-ai/tello-cli/releases)
 #                            Archives are fetched from <base>/download/v<version>/.

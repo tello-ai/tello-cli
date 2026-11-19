@@ -214,6 +214,7 @@ tello tool list --limit 50                         # one page; pass nextCursor a
 tello agent get 12                                 # full settings (agent list shows what calls can use)
 tello tool create --body @tool.json                # JSON object, @file, or - for stdin
 tello agent update 12 --body '{"toolIds":["41","7"]}'   # only the fields sent change
+tello crew update 34 --body '{"webhookUrl":"https://example.com/tello/webhook"}'   # call events; null removes
 tello crew delete 34
 tello crew generate --goal "치과 예약 고객에게 전화해 내일 예약을 확인한다" --wait
 tello crew generation 57
@@ -226,6 +227,14 @@ such as `toolIds` and objects such as a crew's `graph` are replaced whole.
 (exit 8) or a lost response means the change may be live: check with `get` or
 `list` before sending it again. Refusals carry `data.reason` and a Korean
 `data.detail`.
+
+`webhookUrl` on an agent or crew receives the call events of its calls
+(`call.ringing`, `call.started`, `call.transfer_started`, `call.ended`); a
+crew's calls go to the crew's address, not its members'. Events are not
+signed. An optional authentication header (name and value), extra headers and
+a timeout (1–60 s, default 20) are set in the portal's webhook tab; the API
+does not take them. They stay when `webhookUrl` changes, and `null` removes
+them with the address.
 
 `crew generate` builds a crew from a goal as a job. Without `--wait` it
 returns the job; with `--wait` it prints each status and returns the job with

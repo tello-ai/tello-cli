@@ -261,6 +261,11 @@ call uses the result.
   `--idempotency-key`); failures report it in `data.idempotencyKey`. Resending
   the same body with it replays the stored `201` or `writeOutcomeUnknown`
   instead of creating a second one.
+- `webhookUrl` on an agent or crew (`null` removes it) receives that
+  target's call events: `call.ringing`, `call.started`,
+  `call.transfer_started`, `call.ended`. Events are not signed. The optional
+  authentication header, extra headers and timeout are set by the user in the
+  portal's webhook tab; the API does not take them.
 - `delete <id>` returns `{"id":…,"deleted":true}`. Default tools
   (`defaultToolProtected`), tools used by a scenario (`toolInUse`) and
   agents or crews that are a default target or linked to a channel or

@@ -249,6 +249,7 @@ tello tool list --limit 50                         # 한 페이지. 다음은 ne
 tello agent get 12                                 # 전체 설정(agent list는 통화에 쓸 수 있는 대상만)
 tello tool create --body @tool.json                # JSON 객체, @파일, 또는 - (stdin)
 tello agent update 12 --body '{"toolIds":["41","7"]}'   # 보낸 필드만 바뀜
+tello crew update 34 --body '{"webhookUrl":"https://example.com/tello/webhook"}'   # 통화 이벤트. null이면 삭제
 tello crew delete 34
 tello crew generate --goal "치과 예약 고객에게 전화해 내일 예약을 확인한다" --wait
 tello crew generation 57
@@ -260,6 +261,13 @@ tello crew generation 57
 `writeOutcomeUnknown`(exit 8)이나 응답 유실은 이미 반영됐을 수 있다는 뜻이므로
 다시 보내기 전에 `get`이나 `list`로 확인하세요. 거절에는 `data.reason`과 한국어
 `data.detail`이 옵니다.
+
+에이전트·크루의 `webhookUrl`은 그 대상 통화의 이벤트(`call.ringing`,
+`call.started`, `call.transfer_started`, `call.ended`)를 받는 https 주소입니다.
+크루 통화는 멤버 에이전트가 아니라 크루의 주소로 갑니다. 이벤트에는 서명이
+없습니다. 선택 인증 헤더(이름·값), 추가 헤더, 제한 시간(1~60초, 기본 20초)은
+포털의 웹훅 탭에서 정하며 API로는 보낼 수 없습니다. `webhookUrl`을 바꿔도
+유지되고, `null`이면 주소와 함께 지워집니다.
 
 `crew generate`는 목표로 크루를 만드는 작업입니다. `--wait`가 없으면 작업을
 반환하고, `--wait`는 상태를 출력하다가 `crew`가 담긴 작업을 반환합니다. 실패한

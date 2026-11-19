@@ -2,7 +2,7 @@
 
 > 상태: 구현 기준 문서. 명령·출력·exit code·배포 계약은 이 문서를 따른다.
 > 전송: 포털 에이전트·크루와 통화 관리, 도구·에이전트·크루 관리는 REST API, 실시간 턴 응답은
-> [`tello-go`](https://github.com/tello-ai/tello-go) `v0.2.4` (WS 프로토콜 `1.0`).
+> [`tello-go`](https://github.com/tello-ai/tello-go) `v0.3.0` (WS 프로토콜 `1.0`).
 > 참고: [vox CLI](https://docs.tryvox.co/docs/ai/cli), [Claude Code·Codex 연결](https://docs.tryvox.co/docs/ai/clients)
 
 ## 1. 목표와 비목표
@@ -287,6 +287,7 @@ REST 멱등 키는 WS 통화에 적용되지 않는다. 실제 통화는 과금�
 - 생성만 `Idempotency-Key`를 받는다(선택). CLI는 `call create`처럼 임의 생성 또는 `--idempotency-key`를 보내고 실패 시 `data.idempotencyKey`로 알린다. 서버는 `201`과 `502 write_outcome_unknown`만 24시간 저장한다. 수정·삭제에는 키를 보내지 않는다.
 - 결과 불명: 연결 실패·응답 유실·Ctrl-C(`interrupted`), 문서에 없는 5xx(프록시 오류 등)는 쓰기가 반영됐을 수 있다는 뜻이다. 문서에 없는 5xx는 `writeOutcomeUnknown`(exit 8)으로 바꾼다. `get`·`list`로 확인한 뒤, 생성은 같은 키로만 다시 보내거나 없음을 확인한 뒤 새 키로 만든다. `upstreamUnavailable`(503)은 처리되지 않았으므로 다시 보내도 된다(exit 75).
 - 거절은 `data.reason`(소문자 하위 코드)과 `data.detail`(한국어 설명)을 그대로 `data`로 전달한다.
+- 에이전트·크루의 `webhookUrl`(`null`이면 삭제)은 그 대상 통화의 이벤트(`call.ringing`·`call.started`·`call.transfer_started`·`call.ended`)를 받는 https 주소다. 크루 통화는 크루 주소로만 간다. 이벤트에는 서명이 없다. 선택 인증 헤더(이름·값)·추가 헤더·제한 시간은 포털 웹훅 탭에서만 정하고 공개 API는 받지 않는다(api-gateway `docs/ARCHITECTURE.md` «인증 헤더·추가 헤더»). 주소를 바꿔도 유지되고 `null`이면 함께 지워진다. CLI는 이 칸들을 보내는 플래그를 두지 않는다.
 
 ### 12.1 `crew generate` / `crew generation`
 

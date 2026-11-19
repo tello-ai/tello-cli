@@ -1,13 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-19)
+
+Built on `github.com/tello-ai/tello-go` v0.3.0 (WS protocol `1.0`).
+
 - Reworded the help of every command and flag. `tello agent` help no longer
   says "a agent"; `agent update` and `crew update` explain `webhookUrl` (call
-  event webhooks, signing key issued in the portal) with examples; `delete`
+  event webhooks: events are not signed; the optional authentication header,
+  extra headers and timeout are set in the portal's webhook tab, not through
+  the API) with examples; `delete`
   help names the refusals (`agentInUse`, `crewInUse`, `toolInUse`,
   `defaultToolProtected`); `auth login` and `init` gained a description, and
   get, create, update, delete, `call get|end|list` and `crew generation`
   gained examples.
+- The READMEs and the coding-agent guide describe `webhookUrl` the same way.
 - The coding-agent guide and READMEs describe connecting a callee to the
   user: create without `--wait`, poll `call get` until `inProgress`, then
   `call transfer --to <user's number>`.
@@ -55,7 +61,6 @@
   `--idempotency-key` refuses keys the API rejects (empty, over 255 bytes, a
   comma) or that cannot be sent (control characters), with a usage error
   (exit 2) before any request.
-
 
 - Added REST-backed `agent list` and `crew list`, and portal-agent or crew
   calls via `call create --agent|--crew` with start variables. Create returns

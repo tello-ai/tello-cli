@@ -34,8 +34,10 @@ no separate deploy step.`
 // webhookNote is the update help of agents and crews, which carry webhookUrl.
 const webhookNote = `webhookUrl is the https address that receives the call events of this %s's
 calls (call.ringing, call.started, call.transfer_started, call.ended); send
-null to remove it. Saving one needs the account's webhook signing key, issued
-once in the portal's developer settings.`
+null to remove it. Events are not signed. The optional authentication header
+(name and value), extra headers and timeout are set in the portal's webhook
+tab, not through the API: they stay when webhookUrl changes, and null removes
+them with the address.`
 
 // manageCommands returns get, create, update and delete for k.
 func manageCommands(a *app.App, k kind) []*cobra.Command {
