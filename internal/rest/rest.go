@@ -490,7 +490,7 @@ func statusKind(status int) app.Kind {
 
 // apiError turns a non-2xx response into an *app.Error. The envelope's
 // snake_case `error` becomes the camelCase code the rest of the CLI uses;
-// its `data` (e.g. missingVariables) is reported with the error.
+// its `data` (e.g. reason or detail) is reported with the error.
 func apiError(status int, raw []byte) *app.Error {
 	var env struct {
 		Message string `json:"message"`

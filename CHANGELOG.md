@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Dropped `missingVariables`: the API now places a crew call even when some
+  of its variables are missing (each is left blank in the greeting and read
+  as `(미확인)` in member instructions). Human mode no longer prints a
+  `missing variables:` line or its hint, and the READMEs, the coding-agent
+  guide and the design doc no longer list the code.
+
 ## 0.2.0 (2026-11-19)
 
 Built on `github.com/tello-ai/tello-go` v0.3.0 (WS protocol `1.0`).

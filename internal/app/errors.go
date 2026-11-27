@@ -164,7 +164,6 @@ var hints = map[string]string{
 	"crewNotFound":             "List usable crews with `tello crew list`.",
 	"agentInactive":            "Deploy the agent and publish it to production in the portal.",
 	"crewInactive":             "Publish the crew to production in the portal.",
-	"missingVariables":         "Pass the names in data.missingVariables with --var, and retry with the same --idempotency-key.",
 	"callOutcomeUnknown":       "The call may have been placed. Check `tello call list` before calling again; retry only with the same --idempotency-key.",
 	"transferOutcomeUnknown":   "The transfer may have been requested. Check `tello call get` before resending, and resend only with the same --idempotency-key.",
 	"idempotencyInProgress":    "The same request is still running. Retry later with the same --idempotency-key; if this persists, check the call before resending.",

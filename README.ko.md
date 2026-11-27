@@ -68,8 +68,9 @@ tello call create --to +821012345678 --agent 12 --var 고객명=홍길동 --wait
 ```
 
 `--agent` 또는 `--crew` 중 하나를 선택합니다(크루라면 예를 들어 `--crew 34`).
-`--var 이름=값`은 포털에 설정된 시작 변수이며 반복할 수 있습니다. 필수 변수가
-빠지면 `missingVariables`와 필요한 이름을 반환합니다. `--wait`가 없으면 발신
+`--var 이름=값`은 포털에 설정된 시작 변수이며 반복할 수 있습니다. 크루 통화는
+변수가 빠져도 더 이상 실패하지 않습니다. 빠진 변수는 첫 인사에서 빈 값이 되고
+멤버 지시문에서는 `(미확인)`으로 읽힙니다. `--wait`가 없으면 발신
 수락 즉시 통화 객체와 id를 반환합니다. 수락은 통화 완료가 아닙니다. `--wait`는
 기본 2초 간격(`--poll-interval`)으로 상태를 조회합니다. 종료 상태가 `completed`일
 때만 성공하며 그 밖의 종료 상태는 오류입니다. 요약·전사·요금은 종료 직후에도 null일
@@ -290,7 +291,8 @@ Ctrl-C는 대기만 멈추고 작업은 계속됩니다. 계정당 작업은 하
 ```
 
 REST 통화 결과는 통화 객체이고, WebSocket 통화 결과는 `callId`와 `status`입니다.
-실패 시에도 `data`에 통화 객체, 멱등 키 또는 `missingVariables`가 있을 수 있습니다.
+실패 시에도 `data`에 통화 객체, 멱등 키 또는 도구·에이전트·크루 거절의
+`reason`·`detail`이 있을 수 있습니다.
 분기는 `message`가 아니라 `error.code`와 exit code로 하세요. REST의 snake_case 오류
 코드는 camelCase로 변환합니다. `--help`/`help`, `--version`, 두 번째 Ctrl-C/SIGTERM,
 `auth login` 숨김 프롬프트에서의 Ctrl-C만 `cli.result` 없이 끝납니다.
@@ -302,7 +304,7 @@ REST 통화 결과는 통화 객체이고, WebSocket 통화 결과는 `callId`�
 | 2 | `usage` | 플래그·인자 오류(형식이 틀린 id·`--body`·멱등 키 포함), 잘못된 API·게이트웨이 URL(`invalidUrl`) |
 | 3 | `auth` | API 키 없음·거부, 키 권한·허용 IP 밖(`insufficientScope`, `ipNotAllowed`) |
 | 4 | `refused` | 계정 정책 거부: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, … |
-| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
+| 5 | `invalid` | 요청 검증 오류: `agentNotFound`, `agentInactive`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
 | 6 | `callEnded` | 통화가 완료되지 못함: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | 연결 실패·끊김(인증 중 끊김 포함) |
 | 8 | `server` | 서비스 측 오류: `callOutcomeUnknown`(발신됐을 수 있음), `transferOutcomeUnknown`(전환이 요청됐을 수 있음), `writeOutcomeUnknown`(반영됐을 수 있음), 크루 자동 생성 실패, `internalError`, … |

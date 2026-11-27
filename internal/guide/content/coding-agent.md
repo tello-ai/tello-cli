@@ -174,6 +174,11 @@ end (exit 6, code `timeout`); with `--agent`/`--crew` it needs `--wait`. If
 creation or termination cannot be confirmed the call can remain active:
 check `call list` or `call get` before retrying. Call IDs are strings.
 
+`--var name=value` fills the agent's or crew's start variables. A crew call
+is placed even when some are missing: a missing variable is left blank in the
+greeting and read as `(미확인)` in member instructions, so pass every variable
+the crew uses.
+
 ## Output contract (`--json`)
 
 - stdout is NDJSON: one JSON object per line. Warnings and logs go to stderr.
@@ -187,7 +192,7 @@ check `call list` or `call get` before retrying. Call IDs are strings.
 - Branch on `error.code` (and the exit code); `message` is for display only.
   `error.question` is present only for a handler call's `callRejected`. `data`
   may be present on failure too: the call so far, `idempotencyKey` of a failed
-  create or transfer, or `missingVariables` (names to pass with `--var`).
+  create or transfer, or `reason`/`detail` of a tool, agent or crew refusal.
 - Exceptions, which end without a `cli.result` line: `--help` / `help` and
   `--version` (plain text, exit 0); a second Ctrl-C / SIGTERM (immediate exit
   130); Ctrl-C at the hidden `tello auth login` prompt (exit 130). Do not pass
@@ -384,7 +389,7 @@ printf '%s\n' '{"type":"cli.start","to":"+821012345678","prompt":"","metadata":{
 | 2 | `usage` | bad flags or arguments, including a malformed call, draft or resource id, `--body`/`--plan` that is not a JSON object, or `--idempotency-key` | `usage`, `invalidUrl` |
 | 3 | `auth` | no key, key rejected, or the key may not be used here | `apiKeyMissing`, `unauthenticated`, `insufficientScope` (`data.requiredScope`), `ipNotAllowed` |
 | 4 | `refused` | account policy refusal; retrying will not help | `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `destinationBlocked`, `callerNumberUnavailable`, `noRepresentativeNumber` |
-| 5 | `invalid` | request rejected by validation or the resource's state | `targetRequired`, `toRequired`, `agentNotFound`, `crewNotFound`, `agentInactive`, `crewInactive`, `publicationRevoked`, `missingVariables`, `invalidVariables`, `invalidRequest`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `transferModeUnsupported`, `transferDestinationUnsupported`, `callControlUnsupported`, `invalidQuery`, `invalidCursor`, `callRejected`, `unsupportedForCrew`, `notifyUnavailable`, `callRefused`, `instructionsUnclear`, `draftNotApplicable`, `draftNotFound`, `draftAlreadyConfirmed`, `draftSuperseded`, `draftNotConfirmable`, `draftExpired`, `draftRevisionLimit`, `invalidTool`, `invalidAgent`, `invalidCrew`, `toolNotFound`, `defaultToolProtected`, `toolInUse`, `toolTypeManaged`, `toolNotPublishable`, `agentEngineImmutable`, `agentInUse`, `agentNotPublishable`, `crewInUse`, `crewNotPublishable`, `crewGenerationNotFound`, `dtmfDigitsInvalid`, `noActiveCall` |
+| 5 | `invalid` | request rejected by validation or the resource's state | `targetRequired`, `toRequired`, `agentNotFound`, `crewNotFound`, `agentInactive`, `crewInactive`, `publicationRevoked`, `invalidVariables`, `invalidRequest`, `idempotencyKeyReused`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `transferModeUnsupported`, `transferDestinationUnsupported`, `callControlUnsupported`, `invalidQuery`, `invalidCursor`, `callRejected`, `unsupportedForCrew`, `notifyUnavailable`, `callRefused`, `instructionsUnclear`, `draftNotApplicable`, `draftNotFound`, `draftAlreadyConfirmed`, `draftSuperseded`, `draftNotConfirmable`, `draftExpired`, `draftRevisionLimit`, `invalidTool`, `invalidAgent`, `invalidCrew`, `toolNotFound`, `defaultToolProtected`, `toolInUse`, `toolTypeManaged`, `toolNotPublishable`, `agentEngineImmutable`, `agentInUse`, `agentNotPublishable`, `crewInUse`, `crewNotPublishable`, `crewGenerationNotFound`, `dtmfDigitsInvalid`, `noActiveCall` |
 | 6 | `callEnded` | the call did not complete | `noAnswer`, `callFailed`, `cancelled`, `timeout` (`--timeout`), `batchIncomplete` |
 | 7 | `connection` | could not connect, or the connection dropped (also during authentication) | `connectionFailed`, `connectionClosed`, `sessionReplaced`, `crewGenerationStatusUnknown` |
 | 8 | `server` | service-side error; for creates, writes and transfers the outcome may be unknown | `callOutcomeUnknown`, `transferOutcomeUnknown`, `writeOutcomeUnknown`, `internalError`, `callProviderUnauthorized`, `callSetupFailed`, `crewGenerationFailed`, `crewGenerationTimeout`, `crewDeployFailed`, `crewPromoteFailed` |
@@ -401,9 +406,6 @@ call completes. Without `--wait` it succeeds once the call is accepted.
   a minute); for `--agent`/`--crew`, reuse `data.idempotencyKey`. Check the
   call list first whenever the original outcome is uncertain: response storage
   failure can make even a same-key retry place another call.
-- `missingVariables` (exit 5) placed no call: add the names from
-  `data.missingVariables` with `--var` and retry with the same
-  `--idempotency-key`.
 - `callOutcomeUnknown` (exit 8, or 6/130 when creation times out/is interrupted): the call may have started. Look for it with
   `tello call list --agent <id> --created-after <time> --json` and ask the
   user. Never retry it with a new key.

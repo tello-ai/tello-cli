@@ -125,9 +125,6 @@ func (a *App) printError(e *Error) {
 		if id, ok := data["id"].(string); ok && id != "" && !strings.HasPrefix(id, "c_") {
 			fmt.Fprintf(a.Stderr, "  id: %s\n", id)
 		}
-		if names, ok := data["missingVariables"]; ok {
-			fmt.Fprintf(a.Stderr, "  missing variables: %v\n", names)
-		}
 	}
 	if hint, ok := hints[e.Code]; ok {
 		fmt.Fprintf(a.Stderr, "  hint: %s\n", hint)
