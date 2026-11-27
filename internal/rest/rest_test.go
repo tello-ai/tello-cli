@@ -80,16 +80,15 @@ func TestErrorEnvelopeClassification(t *testing.T) {
 	}
 }
 
-func TestMissingVariablesKeepsNames(t *testing.T) {
+func TestErrorEnvelopeKeepsData(t *testing.T) {
 	c := client(t, func(w http.ResponseWriter, r *http.Request) {
-		envelope(w, 422, "missing_variables", map[string]any{"missingVariables": []string{"고객명"}})
+		envelope(w, 422, "notify_unavailable", map[string]any{"reason": "notify_disabled"})
 	})
-	_, err := c.CreateCall(context.Background(), rest.CreateCall{CrewID: "34", To: "+821012345678"}, "k-1")
+	_, err := c.CreateCall(context.Background(), rest.CreateCall{AgentID: "12", To: "+821012345678", PerCall: rest.PerCall{NotifyOnEnd: true}}, "k-1")
 	e := app.Classify(err)
 	data, _ := e.Data.(map[string]any)
-	names, _ := data["missingVariables"].([]any)
-	if e.Code != "missingVariables" || len(names) != 1 || names[0] != "고객명" {
-		t.Fatalf("code %s data %v, want missingVariables [고객명]", e.Code, e.Data)
+	if e.Code != "notifyUnavailable" || data["reason"] != "notify_disabled" {
+		t.Fatalf("code %s data %v, want notifyUnavailable reason notify_disabled", e.Code, e.Data)
 	}
 }
 

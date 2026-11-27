@@ -39,7 +39,7 @@ Flow (you answer each turn)
 - Answer each `user.turn` within ~3s. Log to stderr only. Exit on stdin EOF (killed 5s after the call ends). Exiting during the call without `cancel` cancels it (exit 9); printing `cancel` then exiting ends as `cancelled` (exit 6). Test the handler offline by piping sample stdin lines into it.
 
 Output (`--json`)
-- stdout is NDJSON; every command ends with exactly one `cli.result` line. Branch on `error.code`, not `message`. `data` may carry `missingVariables` (pass them with `--var`), `reason`/`detail` for tool, agent and crew refusals, or `idempotencyKey`.
+- stdout is NDJSON; every command ends with exactly one `cli.result` line. Branch on `error.code`, not `message`. `data` may carry `reason`/`detail` for tool, agent and crew refusals, or `idempotencyKey`.
 - No `cli.result` for `--help`/`help`, `--version`, a second Ctrl-C, or Ctrl-C at the `auth login` prompt.
 
 Exit codes

@@ -121,15 +121,15 @@ func TestCreateFailureReportsIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestCreateMissingVariablesListsNames(t *testing.T) {
+func TestCreateFailureKeepsErrorData(t *testing.T) {
 	t.Parallel()
 	api := fakeapi.New(t, "key-1")
-	api.FailCreates(fakeapi.Failure{Status: 422, Code: "missing_variables", Data: map[string]any{"missingVariables": []string{"고객명"}}})
+	api.FailCreates(fakeapi.Failure{Status: 403, Code: "ip_not_allowed", Data: map[string]any{"ip": "203.0.113.7"}})
 	r := runAPI(t, api.URL, "", true, "create", "--crew", "34", "--to", "+82")
 
-	data := r.failed(t, 5, "missingVariables")
-	if jsonOf(data["missingVariables"]) != `["고객명"]` || data["idempotencyKey"] == nil {
-		t.Fatalf("data = %v, want missingVariables and the key to retry with", data)
+	data := r.failed(t, 3, "ipNotAllowed")
+	if data["ip"] != "203.0.113.7" || data["idempotencyKey"] == nil {
+		t.Fatalf("data = %v, want the error's ip and the key to retry with", data)
 	}
 }
 

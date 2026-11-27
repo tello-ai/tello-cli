@@ -72,8 +72,10 @@ prints its id; follow it with `tello call get <id>`. With `--wait` it prints
 each status change and the final call (summary, transcript, credit). Ctrl-C
 or `--timeout 10m` requests that the call end; if creation or termination
 cannot be confirmed, the call may still be active. Check the call list or
-call status before retrying. `--var name=value` fills the agent's start
-variables; a crew that needs more fails with `missingVariables` and the names.
+call status before retrying. `--var name=value` fills the agent's or crew's
+start variables. Missing crew variables no longer fail the call: a missing one
+is left blank in the greeting and reads as `(미확인)` ("unconfirmed") in
+member instructions.
 
 Per-call settings change one call, not the agent: `--max-duration-seconds`
 (30–1800, agents and crews), and for `--agent` only `--instructions` (the
@@ -267,7 +269,7 @@ second Ctrl-C and a Ctrl-C at the `auth login` prompt end without a
 | 2 | `usage` | Bad flags or arguments (including a malformed id, `--body` or idempotency key), or a URL with the wrong scheme (`invalidUrl`) |
 | 3 | `auth` | Missing or rejected API key, or a key without the scope or allowed IP (`insufficientScope`, `ipNotAllowed`) |
 | 4 | `refused` | Account policy refusal: `insufficientCredit`, `outboundLimitExceeded`, `calleeNotVerified`, `callerNotVerified`, `callerNumberUnavailable`, … |
-| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `missingVariables`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
+| 5 | `invalid` | Rejected request: `agentNotFound`, `agentInactive`, `callNotFound`, `callNotActive`, `invalidTransferRequest`, `callRejected`, `draftSuperseded`, `toolNotFound`, `agentInUse`, `crewNotPublishable`, … |
 | 6 | `callEnded` | The call did not complete: `noAnswer`, `callFailed`, `cancelled`, `timeout`, `batchIncomplete` |
 | 7 | `connection` | Could not connect, or the connection dropped (also during authentication) |
 | 8 | `server` | Service-side error: `callOutcomeUnknown` (the call may have started), `transferOutcomeUnknown` (the transfer may have been requested), `writeOutcomeUnknown` (the write may be live), a failed crew generation, `internalError`, … |
